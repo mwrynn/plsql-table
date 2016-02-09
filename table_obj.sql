@@ -71,7 +71,6 @@ CREATE TYPE table_obj AS OBJECT (
   CREATE OR REPLACE TYPE BODY table_obj AS
     MEMBER FUNCTION qual_table_name RETURN VARCHAR2 IS
     BEGIN
-      --dbms_output.put_line('qual_table_name called');
       IF dblink IS NOT NULL THEN
 	RETURN self.upper_table_name() || '@' || dblink;
       ELSE
@@ -99,7 +98,6 @@ CREATE TYPE table_obj AS OBJECT (
       col_list VARCHAR2(4000) := ''; 
       l_cols_arr COLS_ARR;
     BEGIN
-      --dbms_output.put_line('all_cols called');
       l_cols_arr := all_cols_arr(alias, exclude_list);
       
       FOR i IN 1 .. l_cols_arr.count LOOP
@@ -159,9 +157,6 @@ CREATE TYPE table_obj AS OBJECT (
              CASE WHEN exclude_list IS NOT NULL THEN 'AND column_name NOT IN (' || upper(self.cols_arr_to_commalist(exclude_list, true)) || ') ' END || 
 	     'ORDER BY cols.position';
 
-      --dbms_output.put_line(qry);
-      --dbms_output.put_line(self.upper_table_name() || ',' || self.upper_schema_name());
-
       IF dblink IS NULL AND schema_name IS NOT NULL THEN
 	EXECUTE IMMEDIATE qry BULK COLLECT INTO ret_cols_arr USING self.upper_table_name(), self.upper_schema_name();
       ELSE
@@ -182,8 +177,6 @@ CREATE TYPE table_obj AS OBJECT (
 	     'WHERE table_name=:1' || CASE WHEN dblink IS NULL AND schema_name IS NOT NULL THEN ' AND owner=:2' END || ' ' ||
              CASE WHEN exclude_list IS NOT NULL AND exclude_list.count>0  THEN 'AND column_name NOT IN ( ' || upper(self.cols_arr_to_commalist(exclude_list, true)) || ') ' END ||
 	     'ORDER BY column_id';
-
-      --dbms_output.put_line(qry);
 
       IF dblink IS NULL AND schema_name IS NOT NULL then
 	EXECUTE IMMEDIATE qry BULK COLLECT INTO ret_cols_arr USING self.upper_table_name(), self.upper_schema_name();
@@ -217,7 +210,6 @@ CREATE TYPE table_obj AS OBJECT (
       rebuild_str LONG;
       index_count INT := 0;
     BEGIN
-      --dbms_output.put_line('enable_indexes called');
       FOR rec IN (SELECT * FROM all_indexes WHERE owner=self.upper_schema_name() AND table_name=self.upper_schema_name() AND uniqueness='NONUNIQUE') LOOP
 	IF rec.index_type IN ('NORMAL', 'NORMAL/REV', 'FUNCTION-BASED DOMAIN', 'FUNCTION-BASED NORMAL') THEN
 	  rebuild_str := 'ALTER INDEX ' || rec.index_name || ' REBUILD';
@@ -234,16 +226,13 @@ CREATE TYPE table_obj AS OBJECT (
       disable_str LONG;
       index_count INT := 0;
     BEGIN
-      --dbms_output.put_line('disable_indexes called');
       FOR rec IN (SELECT * FROM all_indexes WHERE owner=self.upper_schema_name() AND table_name=self.upper_schema_name() AND uniqueness='NONUNIQUE') LOOP
 	IF rec.index_type IN ('NORMAL', 'NORMAL/REV', 'FUNCTION-BASED DOMAIN', 'FUNCTION-BASED NORMAL') THEN
 	  disable_str := 'ALTER INDEX ' || rec.index_name || ' UNUSABLE';
 	END IF; 
-        --dbms_output.put_line('disable_str=' || disable_str);
 	EXECUTE IMMEDIATE disable_str;
         index_count := index_count + 1;
       END LOOP;
-      --dbms_output.put_line('disable_indexed finished');
       RETURN index_count;
     END disable_indexes;
 
@@ -255,7 +244,6 @@ CREATE TYPE table_obj AS OBJECT (
       self_pk_cols cols_arr;
       join_str VARCHAR2(4000) := '';
     BEGIN
-      --dbms_output.put_line('join_list called');
       other_pk_cols := other_table.pk_cols_arr();
       self_pk_cols  := self.pk_cols_arr();
 
@@ -283,7 +271,6 @@ CREATE TYPE table_obj AS OBJECT (
       self_non_pk_cols COLS_ARR;
       other_non_pk_cols COLS_ARR;
     BEGIN
-      --dbms_output.put_line('matched_update_list called');
       --get all non-PK cols in self that match all non-PK cols in other, map them
       self_non_pk_cols := self.non_pk_cols_arr();
       other_non_pk_cols := other_table.non_pk_cols_arr();
@@ -322,7 +309,6 @@ CREATE TYPE table_obj AS OBJECT (
       add_col_str VARCHAR2(32767);
     BEGIN
       add_col_str := 'ALTER TABLE ' || self.qual_table_name() || ' ADD ( ' || name || ' ' || type || CASE WHEN constraint IS NOT NULL THEN ' ' || constraint END || ')';
-      --dbms_output.put_line(add_col_str);
       RETURN add_col_str;
     END gen_add_col_ddl;
 
@@ -391,20 +377,15 @@ CREATE TYPE table_obj AS OBJECT (
           IF col_is_fk(rec.column_name) THEN --assumes number for now
             qry := qry || to_char(self.rand_ref_val(rec.column_name));
 	  ELSIF rec.data_type='NUMBER' THEN
-            --dbms_output.put_line('column is number: data_precision=' || rec.data_precision || 'data_scale=' || rec.data_scale);
 	    qry := qry || to_char(trunc(power(10, CASE WHEN rec.data_precision IS NULL THEN 10 ELSE rec.data_precision-rec.data_scale END)*dbms_random.value, rec.data_scale));
 	  ELSIF rec.data_type IN ('VARCHAR', 'CLOB') THEN
-            --dbms_output.put_line('column is varchar/clob');
 	    qry := qry || '''' || dbms_random.string('A', rec.data_length) || ''''; --A means mixed case letters
 	  ELSIF rec.data_type='DATE' THEN
-            --dbms_output.put_line('column is date');
 	    qry := qry || 'to_date(''' || to_char(min_date+trunc(dbms_random.value*(max_date-min_date), 0), 'yyyymmdd hh24:mi:ss') ||
                        ''', ''yyyymmdd hh24:mi:ss'')';
 	  ELSIF rec.data_type LIKE 'TIMESTAMP%' THEN
-            --dbms_output.put_line('column is timestamp');
 	    qry := qry || 'to_timestamp(''' || to_char(cast(min_date+dbms_random.value*(max_date-min_date) as timestamp), 'yyyymmdd hh24:mi:ss.ff') ||
                        ''', ''yyyymmdd hh24:mi:ss.ff'')';
-            --qry := qry || to_char(cast(min_date+dbms_random.value*(max_date-min_date) as timestamp), 'yyyymmdd hh24:mi:ss.ff');
 	  ELSE
 	    raise_application_error( -20002, 'data type not supported at this time: ' || rec.data_type);
 	  END IF;
@@ -457,8 +438,6 @@ CREATE TYPE table_obj AS OBJECT (
       ret_val NUMBER;
       qry LONG;
     BEGIN
-      --dbms_output.put_line('rand_ref_val called: fk_col_name=' || fk_col_name || ', self.upper_table_name()=' || self.upper_table_name());
-
       --get referenced column
       SELECT pk_col.column_name, pk_col.table_name INTO refd_col, refd_table
         FROM user_constraints cons, user_cons_columns col, user_constraints pk_cons, user_cons_columns pk_col
@@ -488,15 +467,12 @@ CREATE TYPE table_obj AS OBJECT (
       match_found BOOLEAN := false;
       exclude_found BOOLEAN := false;
     BEGIN
-      --dbms_output.put_line('intersecting_cols_arr called');
       my_cols := self.all_cols_arr();
  
       FOR i IN 1 .. my_cols.count LOOP
-        --dbms_output.put_line('intersecting_cols_arr: i=' || i);
         match_found := false;
         exclude_found := false;
         FOR j IN 1 .. other_cols.count LOOP
-          --dbms_output.put_line('intersecting_cols_arr: j=' || j);
 
           IF my_cols(i)=other_cols(j) THEN
             ret_cols.extend;
@@ -530,7 +506,6 @@ CREATE TYPE table_obj AS OBJECT (
       l_cols_arr := intersecting_cols_arr(other_cols, nulls_exclude_list, nulls);
 
       FOR i IN 1 .. l_cols_arr.count LOOP
-        --dbms_output.put_line('intersecting_cols: i=' || i);
         col_list := col_list || l_cols_arr(i) || CASE WHEN i < l_cols_arr.count THEN ',' END;
       END LOOP;
 
@@ -542,10 +517,7 @@ CREATE TYPE table_obj AS OBJECT (
     MEMBER FUNCTION table_exists RETURN BOOLEAN IS      
       cols COLS_ARR;
     BEGIN
-      --dbms_output.put_line('table_exists called');
       cols := self.all_cols_arr();
-
-      --dbms_output.put_line('cols.count=' || cols.count);
 
       IF cols.count=0 OR cols IS NULL THEN
         RETURN false;
