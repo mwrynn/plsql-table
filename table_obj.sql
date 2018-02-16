@@ -16,6 +16,11 @@ CREATE TYPE table_obj AS OBJECT (
     schema_name VARCHAR2(255),
     dblink VARCHAR2(255),
 
+/* TODO: group functions into groups: gen for sql generation functions, maybe "sub" group for cols vs. array cols,
+util for enable/disable indexes, random rows etc. How best to group? could use more object types? So something like my_table_obj.gen.arr.all_cols? 
+can these be done in a static manner? yes static methods exist if not the type
+*/
+
     MEMBER FUNCTION qual_table_name RETURN VARCHAR2, --returns fully qualified table name, including "@dblink" if applicable 
     MEMBER FUNCTION upper_table_name RETURN VARCHAR2, --returns uppercase table name, not fully qualified (just the table name)
     MEMBER FUNCTION upper_schema_name RETURN VARCHAR2, --returns uppercase schema name
