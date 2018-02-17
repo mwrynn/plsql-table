@@ -3,6 +3,56 @@ DROP TYPE cols_arr;
 /
 CREATE TYPE cols_arr IS TABLE OF VARCHAR2(255);
 /
+
+DROP TYPE col_type FORCE;
+/
+
+CREATE OR REPLACE TYPE col_type AS OBJECT ( --these fields come from *_tab_cols
+  column_name VARCHAR2(255), --TODO: check length of this from *_tab_cols
+  data_type VARCHAR2(106),
+  data_type_mod VARCHAR2(3),
+  data_type_owner VARCHAR2(30),
+  data_length NUMBER,
+  data_precision NUMBER,
+  data_scale NUMBER,
+  column_id NUMBER,
+  default_length NUMBER,
+  -- data_default NUMBER, -- this is long in *_tab_cols, but this is an illegal type here
+  MAP MEMBER FUNCTION equals RETURN RAW
+);
+/
+
+CREATE OR REPLACE TYPE BODY col_type AS
+  MAP MEMBER FUNCTION equals RETURN RAW AS
+  BEGIN
+  -- Return concatenated RAW string of
+  -- all attributes of the object
+  return
+        -- NVL() to avoid NULLS being treated
+        -- as equal. NVL default values: choose
+       -- carefully!
+       utl_raw.cast_to_raw(
+          nvl(self.column_name, '***')
+       || nvl(self.data_type, '***')
+       || nvl(self.data_type_mod, '***')
+       || nvl(self.data_type_owner, '***')
+       || nvl(self.data_length, -1)
+       || nvl(self.data_precision, -1)
+       || nvl(self.data_scale, -1) 
+       || nvl(self.column_id, -1) 
+       || nvl(self.default_length, -1)
+       -- || nvl(self.data_default, -1)
+        );
+     END equals;
+   END;
+/
+
+
+DROP TYPE col_types_arr;
+/
+CREATE TYPE col_types_arr IS TABLE OF COL_TYPE;
+/
+
 DROP TYPE varchar2_arr;
 /
 CREATE TYPE varchar2_arr IS TABLE OF VARCHAR2(32767);
@@ -32,6 +82,8 @@ can these be done in a static manner? yes static methods exist if not the type
     MEMBER FUNCTION non_pk_cols(alias IN VARCHAR2 DEFAULT NULL, exclude_list IN COLS_ARR DEFAULT NULL) RETURN VARCHAR2,
     /* returns COLS_ARR of all columns in the table, each prefixed with alias || '.' if alias specified, excluding any columns specified in exclude_list */
     MEMBER FUNCTION all_cols_arr(alias IN VARCHAR2 DEFAULT NULL, exclude_list IN COLS_ARR DEFAULT NULL) RETURN COLS_ARR,
+    /* returns COL_TYPES_ARR of all columns in the table, excluding any columns specified in exclude_list */
+    MEMBER FUNCTION all_col_types_arr(exclude_list IN COLS_ARR DEFAULT NULL) RETURN COL_TYPES_ARR,
     /* returns COLS_ARR of primary key columns in the table, each prefixed with alias || '.' if alias specified, excluding any columns specified in exclude_list */
     MEMBER FUNCTION pk_cols_arr(alias IN VARCHAR2 DEFAULT NULL, exclude_list IN COLS_ARR DEFAULT NULL) RETURN COLS_ARR,
     /* returns COLS_ARR of all non-primary key columns in the table, each prefixed with alias || '.' if alias specified, excluding any columns specified in exclude_list */
@@ -69,7 +121,22 @@ can these be done in a static manner? yes static methods exist if not the type
     /* returns a comma-delimited string of columns in this table that intersect with columns in other_cols, parameters nulls and nulls_exclude_list are used to exclude specified column names with the string 'NULL' */
     MEMBER FUNCTION intersecting_cols(other_cols IN COLS_ARR, nulls_exclude_list IN COLS_ARR DEFAULT NULL, nulls IN BOOLEAN DEFAULT false) RETURN VARCHAR2,
     /* returns true if table indicated by table_name, schema_name and dblink exists, false otherwise */
-    MEMBER FUNCTION table_exists RETURN BOOLEAN
+    MEMBER FUNCTION table_exists RETURN BOOLEAN,
+
+    /* diffs two tables either at a schema level or data level, as determined by the various parameters. use_diff_results_table indicates
+       whether the detailed results should be put in a table. Whether this is used or not, the function returns true if the tables differ
+       according to the specified parameters, false if not
+    */
+    MEMBER FUNCTION diff(other_table IN TABLE_OBJ, 
+                         use_diff_results_table IN BOOLEAN DEFAULT true,
+                         compare_columns IN BOOLEAN DEFAULT true,
+                         compare_constraints IN BOOLEAN DEFAULT true,
+                         compare_indexes IN BOOLEAN DEFAULT true,
+                         compare_data IN BOOLEAN default false) RETURN INT,
+
+    MEMBER FUNCTION gen_diff_result_str(table1_name IN VARCHAR2, table2_name IN VARCHAR2, type1 IN COL_TYPE, type2 IN COL_TYPE) RETURN VARCHAR2,
+
+    MEMBER FUNCTION create_diff_results_table(diff_results_table IN table_obj) RETURN BOOLEAN
   ) NOT FINAL;
 /
 
@@ -184,14 +251,34 @@ can these be done in a static manner? yes static methods exist if not the type
 	     'ORDER BY column_id';
 
       IF dblink IS NULL AND schema_name IS NOT NULL then
-	EXECUTE IMMEDIATE qry BULK COLLECT INTO ret_cols_arr USING self.upper_table_name(), self.upper_schema_name();
+	    EXECUTE IMMEDIATE qry BULK COLLECT INTO ret_cols_arr USING self.upper_table_name(), self.upper_schema_name();
       ELSE
-	EXECUTE IMMEDIATE qry BULK COLLECT INTO ret_cols_arr USING self.upper_table_name();
+	    EXECUTE IMMEDIATE qry BULK COLLECT INTO ret_cols_arr USING self.upper_table_name();
       END IF;
 
       RETURN ret_cols_arr;
     END all_cols_arr;
 
+    ---
+
+    MEMBER FUNCTION all_col_types_arr(exclude_list IN COLS_ARR DEFAULT NULL) RETURN COL_TYPES_ARR IS
+      ret_col_types_arr COL_TYPES_ARR := COL_TYPES_ARR();
+      qry VARCHAR2(4000);
+    BEGIN
+      qry := 'SELECT COL_TYPE(column_name, data_type, data_type_mod, data_type_owner, data_length, data_precision, data_scale, column_id, default_length) /*, data_default*/ ' ||
+      'FROM ' || CASE WHEN dblink IS NOT NULL THEN 'user_tab_columns@' || dblink ELSE 'all_tab_columns' END || ' ' ||
+      'WHERE table_name=:1' || CASE WHEN dblink IS NULL AND schema_name IS NOT NULL THEN ' AND owner=:2' END || ' ' ||
+      CASE WHEN exclude_list IS NOT NULL AND exclude_list.count>0  THEN 'AND column_name NOT IN ( ' || upper(self.cols_arr_to_commalist(exclude_list, true)) || ') ' END ||
+      'ORDER BY column_id';
+
+      IF dblink IS NULL AND schema_name IS NOT NULL then
+        EXECUTE IMMEDIATE qry BULK COLLECT INTO ret_col_types_arr USING self.upper_table_name(), self.upper_schema_name();
+      ELSE
+        EXECUTE IMMEDIATE qry BULK COLLECT INTO ret_col_types_arr USING self.upper_table_name();
+      END IF;
+
+      RETURN ret_col_types_arr;
+    END all_col_types_arr;
     ---
 
     MEMBER FUNCTION non_pk_cols_arr(alias IN VARCHAR2 DEFAULT NULL, exclude_list IN COLS_ARR DEFAULT NULL) RETURN COLS_ARR IS
@@ -359,6 +446,8 @@ can these be done in a static manner? yes static methods exist if not the type
       ddl_str := ddl_str || extra_stuff;
       RETURN ddl_str;
     END gen_create_ddl;
+
+    ---
 
     MEMBER FUNCTION gen_insert_random_rows_stmt(n IN INT, min_date IN DATE, max_date IN DATE) RETURN LONG IS
       qry LONG;
@@ -530,7 +619,179 @@ can these be done in a static manner? yes static methods exist if not the type
 
       RETURN true;
     END table_exists;
-  END;
+ 
+    ---
 
+    MEMBER FUNCTION diff(other_table IN TABLE_OBJ,
+                         use_diff_results_table IN BOOLEAN DEFAULT true,
+                         compare_columns IN BOOLEAN DEFAULT true,
+                         compare_constraints IN BOOLEAN DEFAULT true,
+                         compare_indexes IN BOOLEAN DEFAULT true,
+                         compare_data IN BOOLEAN DEFAULT false) RETURN INT IS
+      is_diff BOOLEAN := false;
+      diff_results_table TABLE_OBJ;
+      self_col_types_arr COL_TYPES_ARR;
+      other_col_types_arr COL_TYPES_ARR;
+      diff_str VARCHAR2(32767) := '';
+      dummy BOOLEAN;
+      insert_stmt VARCHAR(32767);
+    BEGIN
+      -- first check for existence of both tables. if one does not exist, throw exception
+      IF NOT self.table_exists THEN
+        raise_application_error( -20003, 'table does not exist: ' || self.qual_table_name);
+      END IF;
+      
+      IF NOT other_table.table_exists THEN
+        raise_application_error( -20003, 'table does not exist: ' || other_table.qual_table_name);
+      END IF;
+
+      -- handle diff_results creaton - if table exists, don't create, else create
+      -- TODO: handle dblink case
+      diff_results_table := table_obj('DIFF_RESULTS', self.schema_name, null);
+      IF NOT diff_results_table.table_exists THEN
+        dummy := create_diff_results_table(diff_results_table);
+      END IF;
+      -- handle compare_columns
+      IF compare_columns THEN
+        self_col_types_arr := self.all_col_types_arr();
+        other_col_types_arr := other_table.all_col_types_arr();
+
+        IF self_col_types_arr != other_col_types_arr THEN
+          is_diff := true;
+          -- have to get the differences - for each col in self, compare by name first. if name matches, compare all other fields,
+          -- keeping the accumulation of diffs in a string format
+          FOR i IN 1 .. self_col_types_arr.count LOOP
+            DECLARE 
+              col_name_found BOOLEAN := false;
+              diff_result_str VARCHAR2(32767);
+            BEGIN
+              FOR j IN 1 .. other_col_types_arr.count LOOP
+                IF self_col_types_arr(i).column_name = other_col_types_arr(j).column_name THEN
+                  col_name_found := true;
+                  diff_result_str := gen_diff_result_str(self.qual_table_name, other_table.qual_table_name, self_col_types_arr(i), other_col_types_arr(j));
+                  diff_str := diff_str || diff_result_str || CASE WHEN diff_result_str IS NOT NULL THEN ';' END;
+                END IF;
+              END LOOP;
+              IF NOT col_name_found THEN
+                diff_str := diff_str || 'column ' || self.qual_table_name || '.' || self_col_types_arr(i).column_name ||
+                  ' not found in ' || other_table.qual_table_name || ', ';
+              END IF;
+            END;
+          END LOOP;
+
+          -- this pair of loops is just to find columns that exist in other but are not found in self
+          FOR i IN 1 .. other_col_types_arr.count LOOP
+            DECLARE
+              col_name_found BOOLEAN := false;
+            BEGIN
+              FOR j IN 1 .. self_col_types_arr.count LOOP
+                IF other_col_types_arr(i).column_name = self_col_types_arr(j).column_name THEN
+                  col_name_found := true;
+                END IF;
+              END LOOP;
+
+              IF NOT col_name_found THEN
+                diff_str := diff_str || 'column ' || other_table.qual_table_name || '.' || other_col_types_arr(i).column_name ||
+                  ' not found in ' || self.qual_table_name || ', ';
+              END IF;
+            END;
+          END LOOP;
+
+          IF length(diff_str) > 0 THEN --trim the trailing ', '
+            diff_str := rtrim(diff_str, ', ');
+          END IF;
+
+        END IF;
+      END IF;
+
+      IF length(diff_str) > 0 THEN
+        insert_stmt := 'INSERT INTO diff_results (table1, table2, diff_type, result) 
+          VALUES(:1, :2, :3, :4)';
+
+        EXECUTE IMMEDIATE insert_stmt USING self.qual_table_name, other_table.qual_table_name, 'C', diff_str;
+        RETURN 1;
+      END IF;
+
+      RETURN 0;
+
+      -- handle compare_constraints
+      -- handle compare_indexes
+      -- handle compare_data
+
+    END diff;
+
+    ---
+
+    MEMBER FUNCTION gen_diff_result_str(table1_name IN VARCHAR2, table2_name IN VARCHAR2, type1 IN COL_TYPE, type2 IN COL_TYPE) RETURN VARCHAR2 IS
+      diff_str VARCHAR2(32767) := '';
+    BEGIN
+      IF type1.column_name != type2.column_name THEN --exit out if column_names don't match - caller will handle column names missing in one
+        RETURN '';
+      END IF;
+      
+      IF type1.data_type != type2.data_type AND NOT (type1.data_type IS NULL AND type2.data_type IS NULL) THEN
+        diff_str := table1_name || '.' || type1.column_name || ' has data_type=' || type1.data_type || ' but ' ||
+                    table2_name || '.' || type2.column_name || ' has data_type=' || type2.data_type || ', ';
+      END IF;
+      
+      IF type1.data_type_mod != type2.data_type_mod AND NOT (type1.data_type_mod IS NULL AND type2.data_type_mod IS NULL) THEN
+        diff_str := diff_str || table1_name || '.' || type1.column_name || ' has data_type_mod=' || type1.data_type_mod || ' but ' ||
+                    table2_name || '.' || type2.column_name || ' has data_type_mod=' || type2.data_type_mod || ', ';
+      END IF;
+
+      IF type1.data_type_owner != type2.data_type_owner AND NOT (type1.data_type_owner IS NULL AND type2.data_type_owner IS NULL) THEN
+        diff_str := diff_str || table1_name || '.' || type1.column_name || ' has data_type_owner=' || type1.data_type_owner || ' but ' ||
+                    table2_name || '.' || type2.column_name || ' has data_type_owner=' || type2.data_type_owner || ', ';
+      END IF;
+
+      IF type1.data_length != type2.data_length AND NOT (type1.data_length IS NULL AND type2.data_length IS NULL) THEN
+        diff_str := diff_str || table1_name || '.' || type1.column_name || ' has data_length=' || type1.data_length || ' but ' ||
+                    table2_name || '.' || type2.column_name || ' has data_length=' || type2.data_length || ', ';
+      END IF;
+      
+      IF type1.data_precision != type2.data_precision AND NOT (type1.data_precision IS NULL AND type2.data_precision IS NULL) THEN
+        diff_str := diff_str || table1_name || '.' || type1.column_name || ' has data_precision=' || type1.data_precision || ' but ' ||
+                    table2_name || '.' || type2.column_name || ' has data_precision=' || type2.data_precision || ', ';
+      END IF;
+
+      IF type1.data_scale != type2.data_scale AND NOT (type1.data_scale IS NULL AND type2.data_scale IS NULL) THEN
+        diff_str := diff_str || table1_name || '.' || type1.column_name || ' has data_scale=' || type1.data_scale || ' but ' ||
+                    table2_name || '.' || type2.column_name || ' has data_scale=' || type2.data_scale || ', ';
+      END IF;
+      
+      IF type1.column_id != type2.column_id AND NOT (type1.column_id IS NULL AND type2.column_id IS NULL) THEN
+        diff_str := diff_str || table1_name || '.' || type1.column_name || ' has column_id=' || type1.column_id || ' but ' ||
+                    table2_name || '.' || type2.column_name || ' has column_id=' || type2.column_id || ', ';
+      END IF;
+
+      IF type1.default_length != type2.default_length AND NOT (type1.default_length IS NULL AND type2.default_length IS NULL) THEN
+        diff_str := diff_str || table1_name || '.' || type1.column_name || ' has default_length=' || type1.default_length || ' but ' ||
+                    table2_name || '.' || type2.column_name || ' has default_length=' || type2.default_length || ', ';
+      END IF;
+
+      IF length(diff_str) > 0 THEN --trim the trailing ', '
+        diff_str := rtrim(diff_str, ', ');
+      END IF;
+      
+      RETURN diff_str;
+    END gen_diff_result_str;
+    
+    --
+    
+    MEMBER FUNCTION create_diff_results_table(diff_results_table IN table_obj) RETURN BOOLEAN IS
+      create_stmt VARCHAR2(32767);
+    BEGIN
+      create_stmt := 'CREATE TABLE ' || diff_results_table.schema_name || '.DIFF_RESULTS (' ||
+                     'ID NUMBER GENERATED AS IDENTITY,' ||
+                     'DIFF_RAN_ON TIMESTAMP DEFAULT SYSTIMESTAMP,' ||
+                     'TABLE1 VARCHAR2(767),' || --767 for 255+'.'+255+'@'+255
+                     'TABLE2 VARCHAR2(767),' || 
+                     'DIFF_TYPE VARCHAR2(1),' ||
+                     'RESULT CLOB,' || 
+                     'CONSTRAINT chk_diff_type CHECK (DIFF_TYPE IN (''C'', ''O'', ''I'', ''D''))' || --Columns, cOnstraints, Indexes, Data
+                     ')'; 
+      EXECUTE IMMEDIATE create_stmt;
+      RETURN true;
+    END create_diff_results_table;
+  END;
 /
----
