@@ -28,8 +28,8 @@ CREATE OR REPLACE TYPE BODY col_type AS
   -- Return concatenated RAW string of
   -- all attributes of the object
   return
-        -- NVL() to avoid NULLS being treated
-        -- as equal. NVL default values: choose
+       -- NVL() to avoid NULLS being treated
+       -- as equal. NVL default values: choose
        -- carefully!
        utl_raw.cast_to_raw(
           nvl(self.column_name, '***')
@@ -635,6 +635,11 @@ can these be done in a static manner? yes static methods exist if not the type
       diff_str VARCHAR2(32767) := '';
       dummy BOOLEAN;
       insert_stmt VARCHAR(32767);
+      data_diff_stmt VARCHAR(32767);
+      self_but_not_other_cnt INT;
+      other_but_not_self_cnt INT;
+      mismatched_rows EXCEPTION;
+      PRAGMA EXCEPTION_INIT(mismatched_rows, -01790);
     BEGIN
       -- first check for existence of both tables. if one does not exist, throw exception
       IF NOT self.table_exists THEN
@@ -705,18 +710,45 @@ can these be done in a static manner? yes static methods exist if not the type
       END IF;
 
       IF length(diff_str) > 0 THEN
-        insert_stmt := 'INSERT INTO diff_results (table1, table2, diff_type, result) 
-          VALUES(:1, :2, :3, :4)';
-
-        EXECUTE IMMEDIATE insert_stmt USING self.qual_table_name, other_table.qual_table_name, 'C', diff_str;
-        RETURN 1;
+        INSERT INTO diff_results (table1, table2, diff_type, result)
+          VALUES(self.qual_table_name, other_table.qual_table_name, 'C', diff_str);
       END IF;
-
-      RETURN 0;
 
       -- handle compare_constraints
       -- handle compare_indexes
       -- handle compare_data
+      BEGIN 
+        IF compare_data THEN
+          data_diff_stmt := 'SELECT COUNT(*) FROM (SELECT * FROM ' || self.qual_table_name || ' MINUS SELECT * FROM ' || other_table.qual_table_name || ')';
+          EXECUTE IMMEDIATE data_diff_stmt INTO self_but_not_other_cnt;
+        END IF;
+      
+        IF compare_data THEN
+          data_diff_stmt := 'SELECT COUNT(*) FROM (SELECT * FROM ' || other_table.qual_table_name || ' MINUS SELECT * FROM ' || self.qual_table_name || ')';
+          EXECUTE IMMEDIATE data_diff_stmt INTO other_but_not_self_cnt;
+        END IF;
+      EXCEPTION WHEN mismatched_rows THEN
+        raise_application_error(-20004, 'Cannot data diff tables ' || self.qual_table_name || ' and ' || other_table.qual_table_name || ' as the columns differ');
+      END;
+      
+      IF self_but_not_other_cnt > 0 THEN
+        diff_str := to_char(self_but_not_other_cnt) || ' rows in ' || self.qual_table_name || ' not found in ' || other_table.qual_table_name || ';';
+      END IF;
+      
+      IF other_but_not_self_cnt > 0 THEN
+        diff_str := diff_str || to_char(other_but_not_self_cnt) || ' rows in ' || other_table.qual_table_name || ' not found in ' || self.qual_table_name;
+      ELSE
+        diff_str := rtrim(diff_str, ';');
+      END IF;
+
+      IF self_but_not_other_cnt > 0 OR other_but_not_self_cnt > 0 THEN 
+        INSERT INTO diff_results (table1, table2, diff_type, result)
+          VALUES(self.qual_table_name, other_table.qual_table_name, 'D', diff_str);
+          
+        is_diff := true;
+      END IF;
+      
+      IF is_diff THEN RETURN 1; ELSE RETURN 0; END IF;
 
     END diff;
 
@@ -775,9 +807,9 @@ can these be done in a static manner? yes static methods exist if not the type
       
       RETURN diff_str;
     END gen_diff_result_str;
-    
+
     --
-    
+
     MEMBER FUNCTION create_diff_results_table(diff_results_table IN table_obj) RETURN BOOLEAN IS
       create_stmt VARCHAR2(32767);
     BEGIN
