@@ -26,7 +26,7 @@ CREATE OR REPLACE TYPE BODY table_obj AS
   ---
 
   MEMBER FUNCTION all_cols(alias IN VARCHAR2 DEFAULT NULL, exclude_list IN COLS_ARR DEFAULT NULL) RETURN VARCHAR2 IS
-    col_list VARCHAR2(4000) := ''; 
+    col_list VARCHAR2(32767) := ''; 
     l_cols_arr COLS_ARR;
   BEGIN
     l_cols_arr := all_cols_arr(alias, exclude_list);
@@ -41,7 +41,7 @@ CREATE OR REPLACE TYPE BODY table_obj AS
   ---
 
   MEMBER FUNCTION pk_cols(alias IN VARCHAR2 DEFAULT NULL, exclude_list IN COLS_ARR DEFAULT NULL) RETURN VARCHAR2 IS
-    col_list VARCHAR2(4000);
+    col_list VARCHAR2(32767);
     l_cols_arr COLS_ARR;
   BEGIN
     l_cols_arr := pk_cols_arr(alias, exclude_list);
@@ -56,7 +56,7 @@ CREATE OR REPLACE TYPE BODY table_obj AS
   ---
 
   MEMBER FUNCTION non_pk_cols(alias IN VARCHAR2 DEFAULT NULL, exclude_list IN COLS_ARR DEFAULT NULL) RETURN VARCHAR2 IS
-    col_list VARCHAR2(4000);
+    col_list VARCHAR2(32767);
     l_cols_arr COLS_ARR;
   BEGIN
 
@@ -73,7 +73,7 @@ CREATE OR REPLACE TYPE BODY table_obj AS
 
   MEMBER FUNCTION pk_cols_arr(alias IN VARCHAR2 DEFAULT NULL, exclude_list IN COLS_ARR DEFAULT NULL) RETURN COLS_ARR IS
     ret_cols_arr cols_arr;
-    qry VARCHAR2(4000);
+    qry VARCHAR2(32767);
   BEGIN
 
     qry := 'SELECT ' || CASE WHEN alias IS NOT NULL THEN '''' || alias || '.'' || ' END || 'column_name ' ||
@@ -101,7 +101,7 @@ EXECUTE IMMEDIATE qry BULK COLLECT INTO ret_cols_arr USING self.upper_table_name
 
   MEMBER FUNCTION all_cols_arr(alias IN VARCHAR2 DEFAULT NULL, exclude_list IN COLS_ARR DEFAULT NULL) RETURN COLS_ARR IS
     ret_cols_arr cols_arr;
-    qry VARCHAR2(4000);
+    qry VARCHAR2(32767);
   BEGIN
     qry := 'SELECT ' || CASE WHEN alias IS NOT NULL THEN '''' || alias || '.'' || ' END || 'column_name ' ||
      'FROM ' || CASE WHEN dblink IS NOT NULL THEN 'user_tab_columns@' || dblink ELSE 'all_tab_columns' END || ' ' ||
@@ -122,7 +122,7 @@ EXECUTE IMMEDIATE qry BULK COLLECT INTO ret_cols_arr USING self.upper_table_name
 
   MEMBER FUNCTION all_col_types_arr(exclude_list IN COLS_ARR DEFAULT NULL) RETURN COL_TYPES_ARR IS
     ret_col_types_arr COL_TYPES_ARR := COL_TYPES_ARR();
-    qry VARCHAR2(4000);
+    qry VARCHAR2(32767);
   BEGIN
     qry := 'SELECT COL_TYPE(column_name, data_type, data_type_mod, data_type_owner, data_length, data_precision, data_scale, column_id, default_length) /*, data_default*/ ' ||
     'FROM ' || CASE WHEN dblink IS NOT NULL THEN 'user_tab_columns@' || dblink ELSE 'all_tab_columns' END || ' ' ||
@@ -142,7 +142,7 @@ EXECUTE IMMEDIATE qry BULK COLLECT INTO ret_cols_arr USING self.upper_table_name
 
   MEMBER FUNCTION non_pk_cols_arr(alias IN VARCHAR2 DEFAULT NULL, exclude_list IN COLS_ARR DEFAULT NULL) RETURN COLS_ARR IS
     ret_cols_arr cols_arr;
-    qry VARCHAR2(4000);
+    qry VARCHAR2(32767);
     l_exclude_list cols_arr;
   BEGIN
     IF exclude_list IS NULL THEN 
@@ -193,7 +193,7 @@ EXECUTE IMMEDIATE disable_str;
   MEMBER FUNCTION join_list(other_table IN table_obj, self_alias IN VARCHAR2 DEFAULT 'a', other_alias IN VARCHAR2 DEFAULT 'b') RETURN VARCHAR2 IS
     other_pk_cols cols_arr;
     self_pk_cols cols_arr;
-    join_str VARCHAR2(4000) := '';
+    join_str VARCHAR2(32767) := '';
   BEGIN
     other_pk_cols := other_table.pk_cols_arr();
     self_pk_cols  := self.pk_cols_arr();
@@ -218,7 +218,7 @@ EXECUTE IMMEDIATE disable_str;
      This is useful for generating merge or update statements, setting a.mycol=b.mycol etc.
   */
   MEMBER FUNCTION matched_update_list(other_table IN table_obj, self_alias IN VARCHAR2 DEFAULT 'a',other_alias IN VARCHAR2 DEFAULT 'b') RETURN VARCHAR2 IS
-    ret_update_list VARCHAR2(4000) := ''; 
+    ret_update_list VARCHAR2(32767) := ''; 
     self_non_pk_cols COLS_ARR;
     other_non_pk_cols COLS_ARR;
   BEGIN
