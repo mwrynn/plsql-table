@@ -481,6 +481,7 @@ END LOOP;
 
   ---
 
+  --TODO: refactor this
   MEMBER FUNCTION diff(other_table IN TABLE_OBJ,
                        use_diff_results_table IN BOOLEAN DEFAULT true,
                        compare_columns IN BOOLEAN DEFAULT true,
@@ -495,8 +496,11 @@ END LOOP;
     dummy BOOLEAN;
     insert_stmt VARCHAR(32767);
     data_diff_stmt VARCHAR(32767);
+    idx_diff_stmt VARCHAR(32767);
     self_but_not_other_cnt INT;
     other_but_not_self_cnt INT;
+    idx_self_but_not_other_cnt INT;
+    idx_other_but_not_self_cnt INT;
     mismatched_rows EXCEPTION;
     PRAGMA EXCEPTION_INIT(mismatched_rows, -01790);
   BEGIN
@@ -574,7 +578,45 @@ END LOOP;
     END IF;
 
     -- handle compare_constraints
+
     -- handle compare_indexes
+    IF compare_indexes THEN
+      idx_diff_stmt := 'SELECT COUNT(*) FROM (' ||
+                       'SELECT INDEX_NAME, INDEX_TYPE, UNIQUENESS, COMPRESSION, COLUMN_NAME, COLUMN_POSITION, COLUMN_LENGTH, CHAR_LENGTH, DESCEND ' ||
+                       'FROM ALL_INDEXES i JOIN ALL_IND_COLUMNS c ON (i.OWNER = c.INDEX_OWNER AND i.INDEX_NAME = c.INDEX_NAME AND ' ||
+                       'i.TABLE_OWNER = c.TABLE_OWNER AND i.TABLE_NAME = c.TABLE_NAME) ' ||
+                       'WHERE I.TABLE_NAME = ''' || self.upper_table_name || ''' AND i.TABLE_OWNER = ''' || self.upper_schema_name || ''' ' ||
+                       'ORDER BY INDEX_NAME, INDEX_TYPE, UNIQUENESS, COMPRESSION, COLUMN_NAME, COLUMN_POSITION, COLUMN_LENGTH, CHAR_LENGTH, DESCEND ' ||
+                       'MINUS ' ||
+                       'SELECT INDEX_NAME, INDEX_TYPE, UNIQUENESS, COMPRESSION, COLUMN_NAME, COLUMN_POSITION, COLUMN_LENGTH, CHAR_LENGTH, DESCEND ' ||
+                       'FROM ALL_INDEXES i JOIN ALL_IND_COLUMNS c ON (i.OWNER = c.INDEX_OWNER AND i.INDEX_NAME = c.INDEX_NAME AND ' ||
+                       'i.TABLE_OWNER = c.TABLE_OWNER AND i.TABLE_NAME = c.TABLE_NAME) ' ||
+                       'WHERE I.TABLE_NAME = ''' || other_table.upper_table_name || ''' AND i.TABLE_OWNER = ''' || other_table.upper_schema_name || ''' ' ||
+                       ') sub';
+
+      EXECUTE IMMEDIATE idx_diff_stmt INTO idx_self_but_not_other_cnt;
+
+      idx_diff_stmt := 'SELECT COUNT(*) FROM (' ||
+                       'SELECT INDEX_NAME, INDEX_TYPE, UNIQUENESS, COMPRESSION, COLUMN_NAME, COLUMN_POSITION, COLUMN_LENGTH, CHAR_LENGTH, DESCEND ' ||
+                       'FROM ALL_INDEXES i JOIN ALL_IND_COLUMNS c ON (i.OWNER = c.INDEX_OWNER AND i.INDEX_NAME = c.INDEX_NAME AND ' ||
+                       'i.TABLE_OWNER = c.TABLE_OWNER AND i.TABLE_NAME = c.TABLE_NAME) ' ||
+                       'WHERE I.TABLE_NAME = ''' || other_table.upper_table_name || ''' AND i.TABLE_OWNER = ''' || other_Table.upper_schema_name || ''' ' ||
+                       'ORDER BY INDEX_NAME, INDEX_TYPE, UNIQUENESS, COMPRESSION, COLUMN_NAME, COLUMN_POSITION, COLUMN_LENGTH, CHAR_LENGTH, DESCEND ' ||
+                       'MINUS ' ||
+                       'SELECT INDEX_NAME, INDEX_TYPE, UNIQUENESS, COMPRESSION, COLUMN_NAME, COLUMN_POSITION, COLUMN_LENGTH, CHAR_LENGTH, DESCEND ' ||
+                       'FROM ALL_INDEXES i JOIN ALL_IND_COLUMNS c ON (i.OWNER = c.INDEX_OWNER AND i.INDEX_NAME = c.INDEX_NAME AND ' ||
+                       'i.TABLE_OWNER = c.TABLE_OWNER AND i.TABLE_NAME = c.TABLE_NAME) ' ||
+                       'WHERE I.TABLE_NAME = ''' || self.upper_table_name || ''' AND i.TABLE_OWNER = ''' || self.upper_schema_name || ''' ' ||
+                       ') sub';
+      EXECUTE IMMEDIATE idx_diff_stmt INTO idx_other_but_not_self_cnt;
+
+      -- TODO: improve on this by stating the specific differences
+      IF idx_self_but_not_other_cnt != 0 OR idx_other_but_not_self_cnt != 0 THEN
+        INSERT INTO diff_results(TABLE1, TABLE2, DIFF_TYPE, RESULT) VALUES (self.qual_table_name, other_table.qual_table_name, 'I', 'Index differences found.');
+        is_diff := true;
+      END IF;
+    END IF;
+
     -- handle compare_data
     BEGIN 
       IF compare_data THEN
