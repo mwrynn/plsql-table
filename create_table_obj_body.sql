@@ -490,13 +490,10 @@ END LOOP;
                        compare_data IN BOOLEAN DEFAULT false) RETURN INT IS
     is_diff BOOLEAN := false;
     diff_results_table TABLE_OBJ;
-    self_col_types_arr COL_TYPES_ARR;
-    other_col_types_arr COL_TYPES_ARR;
     diff_str VARCHAR2(32767) := '';
     dummy BOOLEAN;
     insert_stmt VARCHAR(32767);
     data_diff_stmt VARCHAR(32767);
-    idx_diff_stmt VARCHAR(32767);
     self_but_not_other_cnt INT;
     other_but_not_self_cnt INT;
     idx_self_but_not_other_cnt INT;
@@ -521,100 +518,14 @@ END LOOP;
     END IF;
     -- handle compare_columns
     IF compare_columns THEN
-      self_col_types_arr := self.all_col_types_arr();
-      other_col_types_arr := other_table.all_col_types_arr();
-
-      IF self_col_types_arr != other_col_types_arr THEN
-        is_diff := true;
-        -- have to get the differences - for each col in self, compare by name first. if name matches, compare all other fields,
-        -- keeping the accumulation of diffs in a string format
-        FOR i IN 1 .. self_col_types_arr.count LOOP
-          DECLARE 
-            col_name_found BOOLEAN := false;
-            diff_result_str VARCHAR2(32767);
-          BEGIN
-            FOR j IN 1 .. other_col_types_arr.count LOOP
-              IF self_col_types_arr(i).column_name = other_col_types_arr(j).column_name THEN
-                col_name_found := true;
-                diff_result_str := gen_diff_result_str(self.qual_table_name, other_table.qual_table_name, self_col_types_arr(i), other_col_types_arr(j));
-                diff_str := diff_str || diff_result_str || CASE WHEN diff_result_str IS NOT NULL THEN ';' END;
-              END IF;
-            END LOOP;
-            IF NOT col_name_found THEN
-              diff_str := diff_str || 'column ' || self.qual_table_name || '.' || self_col_types_arr(i).column_name ||
-                ' not found in ' || other_table.qual_table_name || ', ';
-            END IF;
-          END;
-        END LOOP;
-
-        -- this pair of loops is just to find columns that exist in other but are not found in self
-        FOR i IN 1 .. other_col_types_arr.count LOOP
-          DECLARE
-            col_name_found BOOLEAN := false;
-          BEGIN
-            FOR j IN 1 .. self_col_types_arr.count LOOP
-              IF other_col_types_arr(i).column_name = self_col_types_arr(j).column_name THEN
-                col_name_found := true;
-              END IF;
-            END LOOP;
-
-            IF NOT col_name_found THEN
-              diff_str := diff_str || 'column ' || other_table.qual_table_name || '.' || other_col_types_arr(i).column_name ||
-                ' not found in ' || self.qual_table_name || ', ';
-            END IF;
-          END;
-        END LOOP;
-
-        IF length(diff_str) > 0 THEN --trim the trailing ', '
-          diff_str := rtrim(diff_str, ', ');
-        END IF;
-
-      END IF;
-    END IF;
-
-    IF length(diff_str) > 0 THEN
-      INSERT INTO diff_results (table1, table2, diff_type, result)
-        VALUES(self.qual_table_name, other_table.qual_table_name, 'C', diff_str);
+      IF diff_columns(other_table, use_diff_results_table, diff_results_table) THEN is_diff := true; END IF;
     END IF;
 
     -- handle compare_constraints
 
     -- handle compare_indexes
     IF compare_indexes THEN
-      idx_diff_stmt := 'SELECT COUNT(*) FROM (' ||
-                       'SELECT INDEX_NAME, INDEX_TYPE, UNIQUENESS, COMPRESSION, COLUMN_NAME, COLUMN_POSITION, COLUMN_LENGTH, CHAR_LENGTH, DESCEND ' ||
-                       'FROM ALL_INDEXES i JOIN ALL_IND_COLUMNS c ON (i.OWNER = c.INDEX_OWNER AND i.INDEX_NAME = c.INDEX_NAME AND ' ||
-                       'i.TABLE_OWNER = c.TABLE_OWNER AND i.TABLE_NAME = c.TABLE_NAME) ' ||
-                       'WHERE I.TABLE_NAME = ''' || self.upper_table_name || ''' AND i.TABLE_OWNER = ''' || self.upper_schema_name || ''' ' ||
-                       'ORDER BY INDEX_NAME, INDEX_TYPE, UNIQUENESS, COMPRESSION, COLUMN_NAME, COLUMN_POSITION, COLUMN_LENGTH, CHAR_LENGTH, DESCEND ' ||
-                       'MINUS ' ||
-                       'SELECT INDEX_NAME, INDEX_TYPE, UNIQUENESS, COMPRESSION, COLUMN_NAME, COLUMN_POSITION, COLUMN_LENGTH, CHAR_LENGTH, DESCEND ' ||
-                       'FROM ALL_INDEXES i JOIN ALL_IND_COLUMNS c ON (i.OWNER = c.INDEX_OWNER AND i.INDEX_NAME = c.INDEX_NAME AND ' ||
-                       'i.TABLE_OWNER = c.TABLE_OWNER AND i.TABLE_NAME = c.TABLE_NAME) ' ||
-                       'WHERE I.TABLE_NAME = ''' || other_table.upper_table_name || ''' AND i.TABLE_OWNER = ''' || other_table.upper_schema_name || ''' ' ||
-                       ') sub';
-
-      EXECUTE IMMEDIATE idx_diff_stmt INTO idx_self_but_not_other_cnt;
-
-      idx_diff_stmt := 'SELECT COUNT(*) FROM (' ||
-                       'SELECT INDEX_NAME, INDEX_TYPE, UNIQUENESS, COMPRESSION, COLUMN_NAME, COLUMN_POSITION, COLUMN_LENGTH, CHAR_LENGTH, DESCEND ' ||
-                       'FROM ALL_INDEXES i JOIN ALL_IND_COLUMNS c ON (i.OWNER = c.INDEX_OWNER AND i.INDEX_NAME = c.INDEX_NAME AND ' ||
-                       'i.TABLE_OWNER = c.TABLE_OWNER AND i.TABLE_NAME = c.TABLE_NAME) ' ||
-                       'WHERE I.TABLE_NAME = ''' || other_table.upper_table_name || ''' AND i.TABLE_OWNER = ''' || other_Table.upper_schema_name || ''' ' ||
-                       'ORDER BY INDEX_NAME, INDEX_TYPE, UNIQUENESS, COMPRESSION, COLUMN_NAME, COLUMN_POSITION, COLUMN_LENGTH, CHAR_LENGTH, DESCEND ' ||
-                       'MINUS ' ||
-                       'SELECT INDEX_NAME, INDEX_TYPE, UNIQUENESS, COMPRESSION, COLUMN_NAME, COLUMN_POSITION, COLUMN_LENGTH, CHAR_LENGTH, DESCEND ' ||
-                       'FROM ALL_INDEXES i JOIN ALL_IND_COLUMNS c ON (i.OWNER = c.INDEX_OWNER AND i.INDEX_NAME = c.INDEX_NAME AND ' ||
-                       'i.TABLE_OWNER = c.TABLE_OWNER AND i.TABLE_NAME = c.TABLE_NAME) ' ||
-                       'WHERE I.TABLE_NAME = ''' || self.upper_table_name || ''' AND i.TABLE_OWNER = ''' || self.upper_schema_name || ''' ' ||
-                       ') sub';
-      EXECUTE IMMEDIATE idx_diff_stmt INTO idx_other_but_not_self_cnt;
-
-      -- TODO: improve on this by stating the specific differences
-      IF idx_self_but_not_other_cnt != 0 OR idx_other_but_not_self_cnt != 0 THEN
-        INSERT INTO diff_results(TABLE1, TABLE2, DIFF_TYPE, RESULT) VALUES (self.qual_table_name, other_table.qual_table_name, 'I', 'Index differences found.');
-        is_diff := true;
-      END IF;
+      IF diff_indexes(other_table, use_diff_results_table, diff_results_table) THEN is_diff := true; END IF;
     END IF;
 
     -- handle compare_data
@@ -654,7 +565,120 @@ END LOOP;
   END diff;
 
   ---
+  
+  MEMBER FUNCTION diff_indexes(other_table IN TABLE_OBJ, use_diff_results_table IN BOOLEAN DEFAULT true, diff_results_table IN TABLE_OBJ) RETURN INT IS
+    idx_diff_stmt VARCHAR(32767);
+  BEGIN
+    idx_diff_stmt := 'SELECT COUNT(*) FROM (' ||
+                     'SELECT INDEX_NAME, INDEX_TYPE, UNIQUENESS, COMPRESSION, COLUMN_NAME, COLUMN_POSITION, COLUMN_LENGTH, CHAR_LENGTH, DESCEND ' ||
+                     'FROM ALL_INDEXES i JOIN ALL_IND_COLUMNS c ON (i.OWNER = c.INDEX_OWNER AND i.INDEX_NAME = c.INDEX_NAME AND ' ||
+                     'i.TABLE_OWNER = c.TABLE_OWNER AND i.TABLE_NAME = c.TABLE_NAME) ' ||
+                     'WHERE I.TABLE_NAME = ''' || self.upper_table_name || ''' AND i.TABLE_OWNER = ''' || self.upper_schema_name || ''' ' ||
+                     'ORDER BY INDEX_NAME, INDEX_TYPE, UNIQUENESS, COMPRESSION, COLUMN_NAME, COLUMN_POSITION, COLUMN_LENGTH, CHAR_LENGTH, DESCEND ' ||
+                     'MINUS ' ||
+                     'SELECT INDEX_NAME, INDEX_TYPE, UNIQUENESS, COMPRESSION, COLUMN_NAME, COLUMN_POSITION, COLUMN_LENGTH, CHAR_LENGTH, DESCEND ' ||
+                     'FROM ALL_INDEXES i JOIN ALL_IND_COLUMNS c ON (i.OWNER = c.INDEX_OWNER AND i.INDEX_NAME = c.INDEX_NAME AND ' ||
+                     'i.TABLE_OWNER = c.TABLE_OWNER AND i.TABLE_NAME = c.TABLE_NAME) ' ||
+                     'WHERE I.TABLE_NAME = ''' || other_table.upper_table_name || ''' AND i.TABLE_OWNER = ''' || other_table.upper_schema_name || ''' ' ||
+                     ') sub';
 
+    EXECUTE IMMEDIATE idx_diff_stmt INTO idx_self_but_not_other_cnt;
+
+    idx_diff_stmt := 'SELECT COUNT(*) FROM (' ||
+                     'SELECT INDEX_NAME, INDEX_TYPE, UNIQUENESS, COMPRESSION, COLUMN_NAME, COLUMN_POSITION, COLUMN_LENGTH, CHAR_LENGTH, DESCEND ' ||
+                     'FROM ALL_INDEXES i JOIN ALL_IND_COLUMNS c ON (i.OWNER = c.INDEX_OWNER AND i.INDEX_NAME = c.INDEX_NAME AND ' ||
+                     'i.TABLE_OWNER = c.TABLE_OWNER AND i.TABLE_NAME = c.TABLE_NAME) ' ||
+                     'WHERE I.TABLE_NAME = ''' || other_table.upper_table_name || ''' AND i.TABLE_OWNER = ''' || other_Table.upper_schema_name || ''' ' ||
+                     'ORDER BY INDEX_NAME, INDEX_TYPE, UNIQUENESS, COMPRESSION, COLUMN_NAME, COLUMN_POSITION, COLUMN_LENGTH, CHAR_LENGTH, DESCEND ' ||
+                     'MINUS ' ||
+                     'SELECT INDEX_NAME, INDEX_TYPE, UNIQUENESS, COMPRESSION, COLUMN_NAME, COLUMN_POSITION, COLUMN_LENGTH, CHAR_LENGTH, DESCEND ' ||
+                     'FROM ALL_INDEXES i JOIN ALL_IND_COLUMNS c ON (i.OWNER = c.INDEX_OWNER AND i.INDEX_NAME = c.INDEX_NAME AND ' ||
+                     'i.TABLE_OWNER = c.TABLE_OWNER AND i.TABLE_NAME = c.TABLE_NAME) ' ||
+                     'WHERE I.TABLE_NAME = ''' || self.upper_table_name || ''' AND i.TABLE_OWNER = ''' || self.upper_schema_name || ''' ' ||
+                     ') sub';
+    EXECUTE IMMEDIATE idx_diff_stmt INTO idx_other_but_not_self_cnt;
+
+    -- TODO: improve on this by stating the specific differences
+    IF idx_self_but_not_other_cnt != 0 OR idx_other_but_not_self_cnt != 0 THEN
+      IF use_diff_results_table THEN
+        EXECUTE IMMEDIATE 'INSERT INTO ' || diff_results_table.qual_table_name || '(table1, table2, diff_type, result) ' ||
+          'VALUES(' || self.qual_table_name || ', ' || other_table.qual_table_name || ', ''I'', ' || 'Index differences found.' || ')';
+      ELSE
+        dbms_output.put_line('Index differences found.');
+      END IF;
+    END IF;
+
+  END diff_indexes;
+
+  ---
+
+  MEMBER FUNCTION diff_columns(other_table IN TABLE_OBJ, use_diff_results_table IN BOOLEAN DEFAULT true, diff_results_table IN TABLE_OBJ) RETURN INT IS
+    self_col_types_arr COL_TYPES_ARR;
+    other_col_types_arr COL_TYPES_ARR;
+  BEGIN
+    self_col_types_arr := self.all_col_types_arr();
+    other_col_types_arr := other_table.all_col_types_arr();
+
+    IF self_col_types_arr != other_col_types_arr THEN
+      is_diff := true;
+      -- have to get the differences - for each col in self, compare by name first. if name matches, compare all other fields,
+      -- keeping the accumulation of diffs in a string format
+      FOR i IN 1 .. self_col_types_arr.count LOOP
+        DECLARE
+          col_name_found BOOLEAN := false;
+          diff_result_str VARCHAR2(32767);
+        BEGIN
+          FOR j IN 1 .. other_col_types_arr.count LOOP
+            IF self_col_types_arr(i).column_name = other_col_types_arr(j).column_name THEN
+              col_name_found := true;
+              diff_result_str := gen_diff_result_str(self.qual_table_name, other_table.qual_table_name, self_col_types_arr(i), other_col_types_arr(j));
+              diff_str := diff_str || diff_result_str || CASE WHEN diff_result_str IS NOT NULL THEN ';' END;
+            END IF;
+          END LOOP;
+          IF NOT col_name_found THEN
+            diff_str := diff_str || 'column ' || self.qual_table_name || '.' || self_col_types_arr(i).column_name ||
+              ' not found in ' || other_table.qual_table_name || ', ';
+          END IF;
+        END;
+      END LOOP;
+
+      -- this pair of loops is just to find columns that exist in other but are not found in self
+      FOR i IN 1 .. other_col_types_arr.count LOOP
+        DECLARE
+          col_name_found BOOLEAN := false;
+        BEGIN
+          FOR j IN 1 .. self_col_types_arr.count LOOP
+            IF other_col_types_arr(i).column_name = self_col_types_arr(j).column_name THEN
+              col_name_found := true;
+            END IF;
+          END LOOP;
+
+          IF NOT col_name_found THEN
+            diff_str := diff_str || 'column ' || other_table.qual_table_name || '.' || other_col_types_arr(i).column_name ||
+              ' not found in ' || self.qual_table_name || ', ';
+          END IF;
+        END;
+      END LOOP;
+
+      IF length(diff_str) > 0 THEN --trim the trailing ', '
+        diff_str := rtrim(diff_str, ', ');
+      END IF;
+    END IF;
+
+    IF length(diff_str) > 0 THEN
+      IF use_diff_results_table THEN
+        EXECUTE IMMEDIATE 'INSERT INTO ' || diff_results_table.qual_table_name || '(table1, table2, diff_type, result) ' ||
+          'VALUES(' || self.qual_table_name || ', ' || other_table.qual_table_name || ', ''C'', ' || diff_str ||  ')';
+      ELSE
+        dbms_output.put_line(diff_str);
+      END IF;
+    END IF;
+
+    IF is_diff THEN RETURN 1; ELSE RETURN 0; END IF;
+  END diff_columns;
+  ---
+
+  -- TODO: only works for column diffing. should probably add other types or rename this to something like gen_col_diff_result_str
   MEMBER FUNCTION gen_diff_result_str(table1_name IN VARCHAR2, table2_name IN VARCHAR2, type1 IN COL_TYPE, type2 IN COL_TYPE) RETURN VARCHAR2 IS
     diff_str VARCHAR2(32767) := '';
   BEGIN
