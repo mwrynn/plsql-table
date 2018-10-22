@@ -489,6 +489,7 @@ END LOOP;
                        compare_indexes IN BOOLEAN DEFAULT true,
                        compare_data IN BOOLEAN DEFAULT false) RETURN INT IS
     is_diff BOOLEAN := false;
+    is_columns_diff BOOLEAN := false;
     diff_results_table TABLE_OBJ;
     diff_str VARCHAR2(32767) := '';
     dummy BOOLEAN;
@@ -518,7 +519,8 @@ END LOOP;
     END IF;
     -- handle compare_columns
     IF compare_columns THEN
-      IF diff_columns(other_table, use_diff_results_table, diff_results_table) THEN is_diff := true; END IF;
+      is_columns_diff := diff_columns(other_table, use_diff_results_table, diff_results_table);
+      IF columns_diff THEN is_diff := true; END IF;
     END IF;
 
     -- handle compare_constraints
@@ -529,37 +531,40 @@ END LOOP;
     END IF;
 
     -- handle compare_data
-    BEGIN 
-      IF compare_data THEN
-        data_diff_stmt := 'SELECT COUNT(*) FROM (SELECT * FROM ' || self.qual_table_name || ' MINUS SELECT * FROM ' || other_table.qual_table_name || ')';
-        EXECUTE IMMEDIATE data_diff_stmt INTO self_but_not_other_cnt;
+    -- special case : if already diffed columns and they are different, don't compare data
+    
+    IF is_columns_diff THEN
+      BEGIN 
+        IF compare_data THEN
+          data_diff_stmt := 'SELECT COUNT(*) FROM (SELECT * FROM ' || self.qual_table_name || ' MINUS SELECT * FROM ' || other_table.qual_table_name || ')';
+          EXECUTE IMMEDIATE data_diff_stmt INTO self_but_not_other_cnt;
+        END IF;
+      
+        IF compare_data THEN
+          data_diff_stmt := 'SELECT COUNT(*) FROM (SELECT * FROM ' || other_table.qual_table_name || ' MINUS SELECT * FROM ' || self.qual_table_name || ')';
+          EXECUTE IMMEDIATE data_diff_stmt INTO other_but_not_self_cnt;
+        END IF;
+      EXCEPTION WHEN mismatched_rows THEN
+        raise_application_error(-20004, 'Cannot data diff tables ' || self.qual_table_name || ' and ' || other_table.qual_table_name || ' as the columns differ');
+      END;
+      
+      IF self_but_not_other_cnt > 0 THEN
+        diff_str := to_char(self_but_not_other_cnt) || ' rows in ' || self.qual_table_name || ' not found in ' || other_table.qual_table_name || ';';
       END IF;
-    
-      IF compare_data THEN
-        data_diff_stmt := 'SELECT COUNT(*) FROM (SELECT * FROM ' || other_table.qual_table_name || ' MINUS SELECT * FROM ' || self.qual_table_name || ')';
-        EXECUTE IMMEDIATE data_diff_stmt INTO other_but_not_self_cnt;
+      
+      IF other_but_not_self_cnt > 0 THEN
+        diff_str := diff_str || to_char(other_but_not_self_cnt) || ' rows in ' || other_table.qual_table_name || ' not found in ' || self.qual_table_name;
+      ELSE
+        diff_str := rtrim(diff_str, ';');
       END IF;
-    EXCEPTION WHEN mismatched_rows THEN
-      raise_application_error(-20004, 'Cannot data diff tables ' || self.qual_table_name || ' and ' || other_table.qual_table_name || ' as the columns differ');
-    END;
-    
-    IF self_but_not_other_cnt > 0 THEN
-      diff_str := to_char(self_but_not_other_cnt) || ' rows in ' || self.qual_table_name || ' not found in ' || other_table.qual_table_name || ';';
+  
+      IF self_but_not_other_cnt > 0 OR other_but_not_self_cnt > 0 THEN 
+        INSERT INTO diff_results (table1, table2, diff_type, result)
+          VALUES(self.qual_table_name, other_table.qual_table_name, 'D', diff_str);
+          
+        is_diff := true;
+      END IF;
     END IF;
-    
-    IF other_but_not_self_cnt > 0 THEN
-      diff_str := diff_str || to_char(other_but_not_self_cnt) || ' rows in ' || other_table.qual_table_name || ' not found in ' || self.qual_table_name;
-    ELSE
-      diff_str := rtrim(diff_str, ';');
-    END IF;
-
-    IF self_but_not_other_cnt > 0 OR other_but_not_self_cnt > 0 THEN 
-      INSERT INTO diff_results (table1, table2, diff_type, result)
-        VALUES(self.qual_table_name, other_table.qual_table_name, 'D', diff_str);
-        
-      is_diff := true;
-    END IF;
-    
     IF is_diff THEN RETURN 1; ELSE RETURN 0; END IF;
 
   END diff;
