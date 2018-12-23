@@ -1,4 +1,3 @@
-\ -- -*- plsql -*-
 DROP TYPE table_obj FORCE;
 /
 CREATE TYPE table_obj AS OBJECT (
@@ -74,8 +73,8 @@ can these be done in a static manner? yes static methods exist if not the type
     /* returns true if column name specified is part of a foreign key, false otherwise */
     MEMBER FUNCTION col_is_fk(col_name IN VARCHAR2) RETURN BOOLEAN,
     
-    /* returns a random referenced value in a parent table, given a foreign key column name - NOTE: only works on NUMBER type at this time, does not work on composite foreign keys at this time */
-    MEMBER FUNCTION rand_ref_val(fk_col_name IN VARCHAR2) RETURN NUMBER,
+    /* returns a random referenced value in a parent table, given a foreign key column name - NOTE: only works on NUMBER and VARCHAR2 types at this time, does not work on composite foreign keys at this time, NUMBERs are encoded as VARCHAR2 */
+    MEMBER FUNCTION rand_ref_val(fk_col_name IN VARCHAR2, data_type OUT VARCHAR2) RETURN VARCHAR2,
     
     /* returns a COLS_ARR of columns in this table that intersect with columns in other_cols, parameters nulls and nulls_exclude_list are used to exclude specified column names with the string 'NULL' */
     MEMBER FUNCTION intersecting_cols_arr(other_cols IN COLS_ARR, nulls_exclude_list IN COLS_ARR DEFAULT NULL, nulls IN BOOLEAN DEFAULT false) RETURN COLS_ARR,
@@ -96,6 +95,10 @@ can these be done in a static manner? yes static methods exist if not the type
                          compare_constraints IN BOOLEAN DEFAULT true,
                          compare_indexes IN BOOLEAN DEFAULT true,
                          compare_data IN BOOLEAN default false) RETURN INT,
+
+    MEMBER FUNCTION diff_indexes(other_table IN TABLE_OBJ, use_diff_results_table IN BOOLEAN DEFAULT true, diff_results_table IN TABLE_OBJ) RETURN INT,
+    
+    MEMBER FUNCTION diff_columns(other_table IN TABLE_OBJ, use_diff_results_table IN BOOLEAN DEFAULT true, diff_results_table IN TABLE_OBJ) RETURN INT,
 
     MEMBER FUNCTION gen_diff_result_str(table1_name IN VARCHAR2, table2_name IN VARCHAR2, type1 IN COL_TYPE, type2 IN COL_TYPE) RETURN VARCHAR2,
 

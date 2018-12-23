@@ -1,5 +1,4 @@
-\ -- -*- plsql -*-
-CREATE OR REPLACE TYPE BODY table_obj AS
+CREATE OR REPLACE TYPE BODY table_obj AS /* should consider replacing user_* views with all_* so that this will work with other schemas */
   MEMBER FUNCTION qual_table_name RETURN VARCHAR2 IS
   BEGIN
     IF dblink IS NOT NULL THEN
@@ -89,9 +88,9 @@ CREATE OR REPLACE TYPE BODY table_obj AS
      'ORDER BY cols.position';
 
     IF dblink IS NULL AND schema_name IS NOT NULL THEN
-EXECUTE IMMEDIATE qry BULK COLLECT INTO ret_cols_arr USING self.upper_table_name(), self.upper_schema_name();
+      EXECUTE IMMEDIATE qry BULK COLLECT INTO ret_cols_arr USING self.upper_table_name(), self.upper_schema_name();
     ELSE
-EXECUTE IMMEDIATE qry BULK COLLECT INTO ret_cols_arr USING self.upper_table_name();
+      EXECUTE IMMEDIATE qry BULK COLLECT INTO ret_cols_arr USING self.upper_table_name();
     END IF;
 
     RETURN ret_cols_arr;
@@ -110,9 +109,9 @@ EXECUTE IMMEDIATE qry BULK COLLECT INTO ret_cols_arr USING self.upper_table_name
      'ORDER BY column_id';
 
     IF dblink IS NULL AND schema_name IS NOT NULL then
-    EXECUTE IMMEDIATE qry BULK COLLECT INTO ret_cols_arr USING self.upper_table_name(), self.upper_schema_name();
+      EXECUTE IMMEDIATE qry BULK COLLECT INTO ret_cols_arr USING self.upper_table_name(), self.upper_schema_name();
     ELSE
-    EXECUTE IMMEDIATE qry BULK COLLECT INTO ret_cols_arr USING self.upper_table_name();
+      EXECUTE IMMEDIATE qry BULK COLLECT INTO ret_cols_arr USING self.upper_table_name();
     END IF;
 
     RETURN ret_cols_arr;
@@ -162,10 +161,10 @@ EXECUTE IMMEDIATE qry BULK COLLECT INTO ret_cols_arr USING self.upper_table_name
     index_count INT := 0;
   BEGIN
     FOR rec IN (SELECT * FROM all_indexes WHERE owner=self.upper_schema_name() AND table_name=self.upper_schema_name() AND uniqueness='NONUNIQUE') LOOP
-IF rec.index_type IN ('NORMAL', 'NORMAL/REV', 'FUNCTION-BASED DOMAIN', 'FUNCTION-BASED NORMAL') THEN
-  rebuild_str := 'ALTER INDEX ' || rec.index_name || ' REBUILD';
-END IF;
-EXECUTE IMMEDIATE rebuild_str;
+      IF rec.index_type IN ('NORMAL', 'NORMAL/REV', 'FUNCTION-BASED DOMAIN', 'FUNCTION-BASED NORMAL') THEN
+        rebuild_str := 'ALTER INDEX ' || rec.index_name || ' REBUILD';
+      END IF;
+      EXECUTE IMMEDIATE rebuild_str;
       index_count := index_count + 1;
     END LOOP;
     RETURN index_count;
@@ -178,10 +177,10 @@ EXECUTE IMMEDIATE rebuild_str;
     index_count INT := 0;
   BEGIN
     FOR rec IN (SELECT * FROM all_indexes WHERE owner=self.upper_schema_name() AND table_name=self.upper_schema_name() AND uniqueness='NONUNIQUE') LOOP
-IF rec.index_type IN ('NORMAL', 'NORMAL/REV', 'FUNCTION-BASED DOMAIN', 'FUNCTION-BASED NORMAL') THEN
-  disable_str := 'ALTER INDEX ' || rec.index_name || ' UNUSABLE';
-END IF; 
-EXECUTE IMMEDIATE disable_str;
+      IF rec.index_type IN ('NORMAL', 'NORMAL/REV', 'FUNCTION-BASED DOMAIN', 'FUNCTION-BASED NORMAL') THEN
+        disable_str := 'ALTER INDEX ' || rec.index_name || ' UNUSABLE';
+      END IF; 
+      EXECUTE IMMEDIATE disable_str;
       index_count := index_count + 1;
     END LOOP;
     RETURN index_count;
@@ -311,6 +310,8 @@ EXECUTE IMMEDIATE disable_str;
   MEMBER FUNCTION gen_insert_random_rows_stmt(n IN INT, min_date IN DATE, max_date IN DATE) RETURN LONG IS
     qry LONG;
     rand_fk_ref VARCHAR2(32767);
+    data_type VARCHAR2(32767);
+    rand_val VARCHAR2(32767);
   BEGIN
     qry := 'INSERT INTO ' || self.qual_table_name() || '(' || self.all_cols() || ')';
 
@@ -323,35 +324,40 @@ EXECUTE IMMEDIATE disable_str;
       qry := qry || 'SELECT ';
 
       /* loop over each column */
-FOR rec IN (SELECT column_name, data_type, data_length, data_precision, data_scale
-      FROM user_tab_cols
-      WHERE table_name=self.table_name
-                  ORDER by column_id) LOOP
-        IF col_is_fk(rec.column_name) THEN --assumes number for now
-          qry := qry || to_char(self.rand_ref_val(rec.column_name));
-  ELSIF rec.data_type='NUMBER' THEN
-    qry := qry || to_char(trunc(power(10, CASE WHEN rec.data_precision IS NULL THEN 10 ELSE rec.data_precision-rec.data_scale END)*dbms_random.value, rec.data_scale));
-  ELSIF rec.data_type IN ('VARCHAR', 'CLOB') THEN
-    qry := qry || '''' || dbms_random.string('A', rec.data_length) || ''''; --A means mixed case letters
-  ELSIF rec.data_type='DATE' THEN
-    qry := qry || 'to_date(''' || to_char(min_date+trunc(dbms_random.value*(max_date-min_date), 0), 'yyyymmdd hh24:mi:ss') ||
-                     ''', ''yyyymmdd hh24:mi:ss'')';
-  ELSIF rec.data_type LIKE 'TIMESTAMP%' THEN
-    qry := qry || 'to_timestamp(''' || to_char(cast(min_date+dbms_random.value*(max_date-min_date) as timestamp), 'yyyymmdd hh24:mi:ss.ff') ||
-                     ''', ''yyyymmdd hh24:mi:ss.ff'')';
-  ELSE
-    raise_application_error( -20002, 'data type not supported at this time: ' || rec.data_type);
-  END IF;
-        qry := qry || ',';
-END LOOP; 
-
+      FOR rec IN (SELECT column_name, data_type, data_length, data_precision, data_scale
+        FROM user_tab_cols
+        WHERE table_name=self.table_name
+                    ORDER by column_id) LOOP
+        IF col_is_fk(rec.column_name) THEN
+          rand_val := self.rand_ref_val(rec.column_name, data_type);
+          IF data_type = 'VARCHAR2' THEN
+            qry := qry || '''' || self.rand_ref_val(rec.column_name, data_type) || '''';
+          ELSE
+            qry := qry || self.rand_ref_val(rec.column_name, data_type);
+          END IF;
+        ELSIF rec.data_type='NUMBER' THEN
+          qry := qry || to_char(trunc(power(10, CASE WHEN rec.data_precision IS NULL THEN 10 ELSE rec.data_precision-rec.data_scale END)*dbms_random.value, rec.data_scale));
+        ELSIF rec.data_type IN ('VARCHAR2', 'CLOB') THEN
+          qry := qry || '''' || dbms_random.string('A', rec.data_length) || ''''; --A means mixed case letters
+        ELSIF rec.data_type='DATE' THEN
+          qry := qry || 'to_date(''' || to_char(min_date+trunc(dbms_random.value*(max_date-min_date), 0), 'yyyymmdd hh24:mi:ss') ||
+                           ''', ''yyyymmdd hh24:mi:ss'')';
+        ELSIF rec.data_type LIKE 'TIMESTAMP%' THEN
+          qry := qry || 'to_timestamp(''' || to_char(cast(min_date+dbms_random.value*(max_date-min_date) as timestamp), 'yyyymmdd hh24:mi:ss.ff') ||
+                           ''', ''yyyymmdd hh24:mi:ss.ff'')';
+        ELSE
+          raise_application_error( -20002, 'data type not supported at this time: ' || rec.data_type);
+        END IF;
+              qry := qry || ',';
+      END LOOP; 
+  
       qry := substr(qry, 1, length(qry)-1) || ' FROM dual' || chr(10);
-
+  
       IF i < n THEN
         qry := qry || ' UNION ALL' || chr(10);
       END IF;
     END LOOP;      
-
+    
     RETURN qry;
   END gen_insert_random_rows_stmt;
 
@@ -385,27 +391,34 @@ END LOOP;
 
   ---
 
-  MEMBER FUNCTION rand_ref_val(fk_col_name IN VARCHAR2) RETURN NUMBER IS
+  MEMBER FUNCTION rand_ref_val(fk_col_name IN VARCHAR2, data_type OUT VARCHAR2) RETURN VARCHAR2 IS
     refd_col VARCHAR2(32767);
     refd_table VARCHAR2(32767);
-    ret_val NUMBER;
+    ret_val VARCHAR2(32767);
     qry LONG;
   BEGIN
     --get referenced column
-    SELECT pk_col.column_name, pk_col.table_name INTO refd_col, refd_table
-      FROM user_constraints cons, user_cons_columns col, user_constraints pk_cons, user_cons_columns pk_col
+    SELECT pk_col.column_name, pk_col.table_name, tab_col.data_type INTO refd_col, refd_table, data_type
+      FROM user_constraints cons, user_cons_columns col, user_constraints pk_cons, user_cons_columns pk_col, all_tab_columns tab_col
       WHERE
           (cons.owner=col.owner AND cons.table_name=col.table_name AND cons.constraint_name=col.constraint_name)
       AND (cons.r_constraint_name=pk_cons.constraint_name AND cons.r_owner=pk_cons.owner)
       AND (pk_cons.owner=pk_col.owner AND pk_cons.table_name=pk_col.table_name AND pk_cons.constraint_name=pk_col.constraint_name)
+      AND (pk_col.owner=tab_col.owner AND pk_col.table_name=tab_col.table_name AND pk_col.column_name=tab_col.column_name)
       AND cons.table_name=self.upper_table_name()
       AND col.column_name=fk_col_name
       AND cons.constraint_type='R';
 
-    qry := 'SELECT ' || refd_col || ' FROM (SELECT '  || refd_col || ' FROM ' || refd_table || ' ORDER BY dbms_random.random) WHERE rownum=1';
-
+    --TODO: will this work simplified to just the to_char qry?
+    IF data_type = 'VARCHAR2' THEN
+      qry := 'SELECT ' || refd_col || ' FROM (SELECT '  || refd_col || ' FROM ' || refd_table || ' ORDER BY dbms_random.random) WHERE rownum=1';
+    ELSIF data_type = 'NUMBER' THEN
+      qry := 'SELECT to_char(' || refd_col || ') FROM (SELECT '  || refd_col || ' FROM ' || refd_table || ' ORDER BY dbms_random.random) WHERE rownum=1';
+    ELSE
+      null;--TODO: handle this case one way or another
+    END IF;
+    
     EXECUTE IMMEDIATE qry INTO ret_val;
-
     RETURN ret_val;
 
   END rand_ref_val;
@@ -497,8 +510,6 @@ END LOOP;
     data_diff_stmt VARCHAR(32767);
     self_but_not_other_cnt INT;
     other_but_not_self_cnt INT;
-    idx_self_but_not_other_cnt INT;
-    idx_other_but_not_self_cnt INT;
     mismatched_rows EXCEPTION;
     PRAGMA EXCEPTION_INIT(mismatched_rows, -01790);
   BEGIN
@@ -519,15 +530,19 @@ END LOOP;
     END IF;
     -- handle compare_columns
     IF compare_columns THEN
+<<<<<<< Updated upstream
       is_columns_diff := diff_columns(other_table, use_diff_results_table, diff_results_table);
       IF columns_diff THEN is_diff := true; END IF;
+=======
+      IF diff_columns(other_table, use_diff_results_table, diff_results_table) = 1 THEN is_diff := true; END IF;
+>>>>>>> Stashed changes
     END IF;
 
     -- handle compare_constraints
 
     -- handle compare_indexes
     IF compare_indexes THEN
-      IF diff_indexes(other_table, use_diff_results_table, diff_results_table) THEN is_diff := true; END IF;
+      IF diff_indexes(other_table, use_diff_results_table, diff_results_table) = 1 THEN is_diff := true; END IF;
     END IF;
 
     -- handle compare_data
@@ -564,6 +579,28 @@ END LOOP;
           
         is_diff := true;
       END IF;
+<<<<<<< Updated upstream
+=======
+    EXCEPTION WHEN mismatched_rows THEN
+      raise_application_error(-20004, 'Cannot data diff tables ' || self.qual_table_name || ' and ' || other_table.qual_table_name || ' as the columns differ');
+    END;
+    
+    IF self_but_not_other_cnt > 0 THEN
+      diff_str := to_char(self_but_not_other_cnt) || ' rows in ' || self.qual_table_name || ' not found in ' || other_table.qual_table_name || ';';
+    END IF;
+    
+    IF other_but_not_self_cnt > 0 THEN
+      diff_str := diff_str || to_char(other_but_not_self_cnt) || ' rows in ' || other_table.qual_table_name || ' not found in ' || self.qual_table_name;
+    ELSE
+      diff_str := rtrim(diff_str, ';');
+    END IF;
+
+    IF self_but_not_other_cnt > 0 OR other_but_not_self_cnt > 0 THEN         
+      EXECUTE IMMEDIATE 'INSERT INTO ' || diff_results_table.qual_table_name || '(table1, table2, diff_type, result) ' ||
+          'VALUES(' || self.qual_table_name || ', ' || other_table.qual_table_name || ', ''D'', ' || diff_str ||  ')';
+        
+      is_diff := true;
+>>>>>>> Stashed changes
     END IF;
     IF is_diff THEN RETURN 1; ELSE RETURN 0; END IF;
 
@@ -573,6 +610,8 @@ END LOOP;
   
   MEMBER FUNCTION diff_indexes(other_table IN TABLE_OBJ, use_diff_results_table IN BOOLEAN DEFAULT true, diff_results_table IN TABLE_OBJ) RETURN INT IS
     idx_diff_stmt VARCHAR(32767);
+    idx_self_but_not_other_cnt INT;
+    idx_other_but_not_self_cnt INT;
   BEGIN
     idx_diff_stmt := 'SELECT COUNT(*) FROM (' ||
                      'SELECT INDEX_NAME, INDEX_TYPE, UNIQUENESS, COMPRESSION, COLUMN_NAME, COLUMN_POSITION, COLUMN_LENGTH, CHAR_LENGTH, DESCEND ' ||
@@ -620,6 +659,8 @@ END LOOP;
   MEMBER FUNCTION diff_columns(other_table IN TABLE_OBJ, use_diff_results_table IN BOOLEAN DEFAULT true, diff_results_table IN TABLE_OBJ) RETURN INT IS
     self_col_types_arr COL_TYPES_ARR;
     other_col_types_arr COL_TYPES_ARR;
+    diff_str VARCHAR2(32767);
+    is_diff BOOLEAN;
   BEGIN
     self_col_types_arr := self.all_col_types_arr();
     other_col_types_arr := other_table.all_col_types_arr();

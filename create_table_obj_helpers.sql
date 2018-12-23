@@ -1,4 +1,3 @@
-\ -- -*- plsql -*-
 DROP TYPE cols_arr;
 /
 CREATE TYPE cols_arr IS TABLE OF VARCHAR2(255);
