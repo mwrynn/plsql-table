@@ -37,10 +37,10 @@ can these be done in a static manner? yes static methods exist if not the type
     /* returns COLS_ARR of all non-primary key columns in the table, each prefixed with alias || '.' if alias specified, excluding any columns specified in exclude_list */
     MEMBER FUNCTION non_pk_cols_arr(alias IN VARCHAR2 DEFAULT NULL, exclude_list IN COLS_ARR DEFAULT NULL) RETURN COLS_ARR,
     
-    /* enables all non-unique indexes on the table (uniques are needed to enforce unique/primary keys */
+    /* enables all non-unique indexes on the table (uniques are needed to enforce unique/primary keys, TODO: handle PK/Unique optionally) */
     MEMBER FUNCTION enable_indexes RETURN INT,
     
-    /* disables all non-unique indexes on the table (uniques are needed to enforce unique/primary keys */
+    /* disables all non-unique indexes on the table (uniques are needed to enforce unique/primary keys, TODO: handle PK/Unique optionally) */
     MEMBER FUNCTION disable_indexes RETURN INT,
     
     /* given other_table (name of another table in the same schema), returns string of join columns between the two tables. Joins on primary key columns having the same name only. self_alias and other_alias are optional aliases for this table and other_table, respectively */

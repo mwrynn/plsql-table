@@ -160,7 +160,7 @@ CREATE OR REPLACE TYPE BODY table_obj AS /* should consider replacing user_* vie
     rebuild_str LONG;
     index_count INT := 0;
   BEGIN
-    FOR rec IN (SELECT * FROM all_indexes WHERE owner=self.upper_schema_name() AND table_name=self.upper_schema_name() AND uniqueness='NONUNIQUE') LOOP
+    FOR rec IN (SELECT * FROM all_indexes WHERE owner=self.upper_schema_name() AND table_name=self.upper_table_name() AND uniqueness='NONUNIQUE') LOOP
       IF rec.index_type IN ('NORMAL', 'NORMAL/REV', 'FUNCTION-BASED DOMAIN', 'FUNCTION-BASED NORMAL') THEN
         rebuild_str := 'ALTER INDEX ' || rec.index_name || ' REBUILD';
       END IF;
@@ -176,9 +176,9 @@ CREATE OR REPLACE TYPE BODY table_obj AS /* should consider replacing user_* vie
     disable_str LONG;
     index_count INT := 0;
   BEGIN
-    FOR rec IN (SELECT * FROM all_indexes WHERE owner=self.upper_schema_name() AND table_name=self.upper_schema_name() AND uniqueness='NONUNIQUE') LOOP
+    FOR rec IN (SELECT * FROM all_indexes WHERE owner=self.upper_schema_name() AND table_name=self.upper_table_name() AND uniqueness='NONUNIQUE') LOOP
       IF rec.index_type IN ('NORMAL', 'NORMAL/REV', 'FUNCTION-BASED DOMAIN', 'FUNCTION-BASED NORMAL') THEN
-        disable_str := 'ALTER INDEX ' || rec.index_name || ' UNUSABLE';
+        disable_str := 'ALTER INDEX ' || self.upper_schema_name() || '.' || rec.index_name || ' UNUSABLE';
       END IF; 
       EXECUTE IMMEDIATE disable_str;
       index_count := index_count + 1;

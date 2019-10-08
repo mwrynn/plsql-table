@@ -17,8 +17,19 @@ CREATE OR REPLACE PACKAGE pkg_table_obj_test AS
   --%test(test that the function all_cols, with an alias, no exclude_list, returns the list of all table columns with the alias)
   PROCEDURE test_all_cols_alias;
   
+  --%test(test that the function all_cols, with an alias, and with exclude_list, returns the list of all table columns with the alias except for the excluded ones)
+  PROCEDURE test_all_cols_exclude_list_and_alias;
+
   --%test(test that the function pk_cols, no an alias, no exclude_list, returns the list of all primary key columns)
   PROCEDURE test_pk_cols;
 
+  --%test(test that the function non_pk_cols, no an alias, no exclude_list, returns the list of all non-primary key columns)
+  PROCEDURE test_non_pk_cols;
+
+  --%test(test that the function disable_indexes disables all non-unique indexes on the table)
+  PROCEDURE test_disable_indexes;
+
+  --%test(test that the function enable_indexes enables all non-unique indexes on the table)
+  PROCEDURE test_enable_indexes;
 END;
 
