@@ -31,5 +31,13 @@ CREATE OR REPLACE PACKAGE pkg_table_obj_test AS
 
   --%test(test that the function enable_indexes enables all non-unique indexes on the table)
   PROCEDURE test_enable_indexes;
+
+  --%test(test that the function gen_insert_random_rows_stmt generates valid data)
+  PROCEDURE test_gen_insert_random_rows_stmt;
+
+  --%test(test that the function gen_insert_random_rows_stmt fails when date range not specified, when the table has a date column)
+  --%throws(-20005)
+  PROCEDURE test_gen_insert_random_rows_stmt_date_fail;
+
 END;
 

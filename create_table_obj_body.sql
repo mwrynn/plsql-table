@@ -307,13 +307,13 @@ CREATE OR REPLACE TYPE BODY table_obj AS /* should consider replacing user_* vie
 
   ---
 
-  MEMBER FUNCTION gen_insert_random_rows_stmt(n IN INT, min_date IN DATE, max_date IN DATE) RETURN LONG IS
+  MEMBER FUNCTION gen_insert_random_rows_stmt(n IN INT, min_date IN DATE DEFAULT NULL, max_date IN DATE DEFAULT NULL) RETURN LONG IS
     qry LONG;
     rand_fk_ref VARCHAR2(32767);
     data_type VARCHAR2(32767);
     rand_val VARCHAR2(32767);
   BEGIN
-    qry := 'INSERT INTO ' || self.qual_table_name() || '(' || self.all_cols() || ')';
+    qry := 'INSERT INTO ' || self.qual_table_name() || '(' || self.all_cols() || ')' || chr(10);
 
     IF self.dblink IS NOT NULL THEN 
       raise_application_error( -20001, 'dblink not supported by insert_random_rows function at this time');
@@ -340,9 +340,15 @@ CREATE OR REPLACE TYPE BODY table_obj AS /* should consider replacing user_* vie
         ELSIF rec.data_type IN ('VARCHAR2', 'CLOB') THEN
           qry := qry || '''' || dbms_random.string('A', rec.data_length) || ''''; --A means mixed case letters
         ELSIF rec.data_type='DATE' THEN
+          IF min_date IS NULL OR max_date IS NULL THEN
+            raise_application_error( -20005, 'to generate random dates or timestamps, min_date and max_date must be specified');
+          END IF;
           qry := qry || 'to_date(''' || to_char(min_date+trunc(dbms_random.value*(max_date-min_date), 0), 'yyyymmdd hh24:mi:ss') ||
                            ''', ''yyyymmdd hh24:mi:ss'')';
         ELSIF rec.data_type LIKE 'TIMESTAMP%' THEN
+          IF min_date IS NULL OR max_date IS NULL THEN
+            raise_application_error( -20005, 'to generate random dates or timestamps, min_date and max_date must be specified');
+          END IF;
           qry := qry || 'to_timestamp(''' || to_char(cast(min_date+dbms_random.value*(max_date-min_date) as timestamp), 'yyyymmdd hh24:mi:ss.ff') ||
                            ''', ''yyyymmdd hh24:mi:ss.ff'')';
         ELSE
