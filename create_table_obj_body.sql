@@ -312,47 +312,55 @@ CREATE OR REPLACE TYPE BODY table_obj AS /* should consider replacing user_* vie
     rand_fk_ref VARCHAR2(32767);
     data_type VARCHAR2(32767);
     rand_val VARCHAR2(32767);
-  BEGIN
-    qry := 'INSERT INTO ' || self.qual_table_name() || '(' || self.all_cols() || ')' || chr(10);
 
+    TYPE col_metadata_arr_type IS TABLE OF user_tab_cols%ROWTYPE INDEX BY PLS_INTEGER;
+
+    col_metadata_arr col_metadata_arr_type;
+  BEGIN
     IF self.dblink IS NOT NULL THEN 
       raise_application_error( -20001, 'dblink not supported by insert_random_rows function at this time');
     END IF;
+
+    qry := 'INSERT INTO ' || self.qual_table_name() || '(' || self.all_cols() || ')' || chr(10);
+
+    /* collect the column metadata to loop over */
+    SELECT *
+    BULK COLLECT INTO col_metadata_arr
+    FROM user_tab_cols
+    WHERE table_name=self.table_name
+    ORDER by column_id;
     
     /* loop n times, where n is number of rows to generate */
     FOR i in 1 .. n LOOP
       qry := qry || 'SELECT ';
 
-      /* loop over each column */
-      FOR rec IN (SELECT column_name, data_type, data_length, data_precision, data_scale
-        FROM user_tab_cols
-        WHERE table_name=self.table_name
-                    ORDER by column_id) LOOP
-        IF col_is_fk(rec.column_name) THEN
-          rand_val := self.rand_ref_val(rec.column_name, data_type);
+      /* loop over each column in col_metadata_arr */
+      FOR col_i IN 1 .. col_metadata_arr.count LOOP
+        IF col_is_fk(col_metadata_arr(col_i).column_name) THEN
+          rand_val := self.rand_ref_val(col_metadata_arr(col_i).column_name, data_type);
           IF data_type = 'VARCHAR2' THEN
-            qry := qry || '''' || self.rand_ref_val(rec.column_name, data_type) || '''';
+            qry := qry || '''' || self.rand_ref_val(col_metadata_arr(col_i).column_name, data_type) || '''';
           ELSE
-            qry := qry || self.rand_ref_val(rec.column_name, data_type);
+            qry := qry || self.rand_ref_val(col_metadata_arr(col_i).column_name, data_type);
           END IF;
-        ELSIF rec.data_type='NUMBER' THEN
-          qry := qry || to_char(trunc(power(10, CASE WHEN rec.data_precision IS NULL THEN 10 ELSE rec.data_precision-rec.data_scale END)*dbms_random.value, rec.data_scale));
-        ELSIF rec.data_type IN ('VARCHAR2', 'CLOB') THEN
-          qry := qry || '''' || dbms_random.string('A', rec.data_length) || ''''; --A means mixed case letters
-        ELSIF rec.data_type='DATE' THEN
+        ELSIF col_metadata_arr(col_i).data_type='NUMBER' THEN
+          qry := qry || to_char(trunc(power(10, CASE WHEN col_metadata_arr(col_i).data_precision IS NULL THEN 10 ELSE col_metadata_arr(col_i).data_precision-col_metadata_arr(col_i).data_scale END)*dbms_random.value, col_metadata_arr(col_i).data_scale));
+        ELSIF col_metadata_arr(col_i).data_type IN ('VARCHAR2', 'CLOB') THEN
+          qry := qry || '''' || dbms_random.string('A', col_metadata_arr(col_i).data_length) || ''''; --A means mixed case letters
+        ELSIF col_metadata_arr(col_i).data_type='DATE' THEN
           IF min_date IS NULL OR max_date IS NULL THEN
             raise_application_error( -20005, 'to generate random dates or timestamps, min_date and max_date must be specified');
           END IF;
           qry := qry || 'to_date(''' || to_char(min_date+trunc(dbms_random.value*(max_date-min_date), 0), 'yyyymmdd hh24:mi:ss') ||
                            ''', ''yyyymmdd hh24:mi:ss'')';
-        ELSIF rec.data_type LIKE 'TIMESTAMP%' THEN
+        ELSIF col_metadata_arr(col_i).data_type LIKE 'TIMESTAMP%' THEN
           IF min_date IS NULL OR max_date IS NULL THEN
             raise_application_error( -20005, 'to generate random dates or timestamps, min_date and max_date must be specified');
           END IF;
           qry := qry || 'to_timestamp(''' || to_char(cast(min_date+dbms_random.value*(max_date-min_date) as timestamp), 'yyyymmdd hh24:mi:ss.ff') ||
                            ''', ''yyyymmdd hh24:mi:ss.ff'')';
         ELSE
-          raise_application_error( -20002, 'data type not supported at this time: ' || rec.data_type);
+          raise_application_error( -20002, 'data type not supported at this time: ' || col_metadata_arr(col_i).data_type);
         END IF;
               qry := qry || ',';
       END LOOP; 
@@ -499,6 +507,17 @@ CREATE OR REPLACE TYPE BODY table_obj AS /* should consider replacing user_* vie
   END table_exists;
 
   ---
+
+  MEMBER PROCEDURE drop_table(ignore_if_not_exists IN BOOLEAN DEFAULT true) IS
+  BEGIN
+    IF ignore_if_not_exists THEN
+      IF self.table_exists THEN
+        EXECUTE IMMEDIATE 'DROP TABLE ' || self.qual_table_name;
+      END IF;
+    ELSE
+      EXECUTE IMMEDIATE 'DROP TABLE ' || self.qual_table_name;
+    END IF;
+  END drop_table;
 
   --TODO: refactor this
   MEMBER FUNCTION diff(other_table IN TABLE_OBJ,

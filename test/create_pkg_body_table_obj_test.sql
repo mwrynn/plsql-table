@@ -1,5 +1,7 @@
 CREATE OR REPLACE PACKAGE BODY pkg_table_obj_test AS
   test_table_obj table_obj;
+  test_parent_table_obj table_obj;
+
   
   PROCEDURE setup(schema IN VARCHAR2 DEFAULT 'MWRYNN') AS
     test_schema VARCHAR2(32767);
@@ -9,16 +11,10 @@ CREATE OR REPLACE PACKAGE BODY pkg_table_obj_test AS
     --tried defaulting to sys_context( 'userenv', 'current_schema' ), but that returns null in this context
 
     test_table_obj := table_obj('MW_TEST', UPPER(test_schema), NULL);
-    
-    --I can't believe we still don't have DROP TABLE IF EXISTS!
-    BEGIN
-      EXECUTE IMMEDIATE 'DROP TABLE ' || test_schema || '.mw_test';
-    EXCEPTION
-    WHEN OTHERS THEN
-      IF SQLCODE != -942 THEN
-         RAISE;
-      END IF;
-    END;
+    test_parent_table_obj := table_obj('MW_TEST_PARENT', UPPER(test_schema), NULL);
+        
+    test_table_obj.drop_table;
+    test_parent_table_obj.drop_table;
 
     BEGIN
       EXECUTE IMMEDIATE 'DROP TABLE ' || test_schema || '.mw_test_parent';
@@ -161,6 +157,13 @@ CREATE OR REPLACE PACKAGE BODY pkg_table_obj_test AS
     dummy LONG;
   BEGIN
     dummy := test_table_obj.gen_insert_random_rows_stmt(3);
+  END;
+
+  PROCEDURE test_drop_table IS
+  BEGIN
+    test_table_obj.drop_table;
+
+    ut3.ut.expect(test_table_obj.table_exists).to_equal(false);
   END;
 END;
 

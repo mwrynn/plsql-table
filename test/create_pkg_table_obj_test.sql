@@ -1,8 +1,8 @@
 CREATE OR REPLACE PACKAGE pkg_table_obj_test AS
   --%suite(tests for the table_obj functions)
+  --%rollback(manual)
   
   --%beforeall
-  --%rollback(manual)
   PROCEDURE setup(schema IN VARCHAR2 DEFAULT 'MWRYNN');
   
   --%test(test that the function qual_table_name, without a dblink, returns the expected string)
@@ -38,6 +38,9 @@ CREATE OR REPLACE PACKAGE pkg_table_obj_test AS
   --%test(test that the function gen_insert_random_rows_stmt fails when date range not specified, when the table has a date column)
   --%throws(-20005)
   PROCEDURE test_gen_insert_random_rows_stmt_date_fail;
+
+  --%test(test that existing table is successfully dropped)
+  PROCEDURE test_drop_table;
 
 END;
 
