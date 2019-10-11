@@ -1,5 +1,8 @@
 CREATE OR REPLACE PACKAGE BODY pkg_table_obj_test AS
   test_table_obj table_obj;
+  test_parent_table_obj table_obj;
+  test_for_diff_table_obj table_obj;
+  test_duplicate_table_obj table_obj;
   
   PROCEDURE setup(schema IN VARCHAR2 DEFAULT 'MWRYNN') AS
     test_schema VARCHAR2(32767);
@@ -9,26 +12,10 @@ CREATE OR REPLACE PACKAGE BODY pkg_table_obj_test AS
     --tried defaulting to sys_context( 'userenv', 'current_schema' ), but that returns null in this context
 
     test_table_obj := table_obj('MW_TEST', UPPER(test_schema), NULL);
-    
-    --I can't believe we still don't have DROP TABLE IF EXISTS!
-    BEGIN
-      EXECUTE IMMEDIATE 'DROP TABLE ' || test_schema || '.mw_test';
-    EXCEPTION
-    WHEN OTHERS THEN
-      IF SQLCODE != -942 THEN
-         RAISE;
-      END IF;
-    END;
-
-    BEGIN
-      EXECUTE IMMEDIATE 'DROP TABLE ' || test_schema || '.mw_test_parent';
-    EXCEPTION
-    WHEN OTHERS THEN
-      IF SQLCODE != -942 THEN
-         RAISE;
-      END IF;
-    END;
-
+    test_parent_table_obj := table_obj('MW_TEST_PARENT', UPPER(test_schema), NULL);
+        
+    test_table_obj.drop_table;
+    test_parent_table_obj.drop_table;
 
     --if I use test_table_obj.schema_name below instead of test_schema, internal error. ¯\_(ツ)_/¯
     EXECUTE IMMEDIATE 'CREATE TABLE ' || test_schema || '.mw_test(a INT, b VARCHAR2(10), c DATE, d NUMBER(15,2), PRIMARY KEY(a,d))';
@@ -47,6 +34,17 @@ CREATE OR REPLACE PACKAGE BODY pkg_table_obj_test AS
     EXECUTE IMMEDIATE 'INSERT INTO ' || test_schema || '.mw_test(a,b,c,d) VALUES (1, ''abc'', to_date(''20190101'',''YYYYMMDD''), 543.21)';
     EXECUTE IMMEDIATE 'INSERT INTO ' || test_schema || '.mw_test(a,b,c,d) VALUES (2, ''abc'', to_date(''20190401'',''YYYYMMDD''), 123456.7)';
     EXECUTE IMMEDIATE 'INSERT INTO ' || test_schema || '.mw_test(a,b,c,d) VALUES (3, ''def'', to_date(''20190325'',''YYYYMMDD''), 0)';
+
+    --for diffing
+    test_for_diff_table_obj := table_obj('MW_TEST2', UPPER(test_schema), NULL);
+    test_for_diff_table_obj.drop_table;
+
+    EXECUTE IMMEDIATE 'CREATE TABLE ' || test_schema || '.mw_test2(a INT, b VARCHAR2(20), c NUMBER(10), d NUMBER(15,2), e DATE, PRIMARY KEY(a,d))';
+
+    test_duplicate_table_obj := table_obj('MW_TEST3', UPPER(test_schema), NULL);
+    test_duplicate_table_obj.drop_table;
+
+    EXECUTE IMMEDIATE 'CREATE TABLE ' || test_schema || '.mw_test3 AS SELECT * FROM mw_test';
 
   END;
   
@@ -162,5 +160,60 @@ CREATE OR REPLACE PACKAGE BODY pkg_table_obj_test AS
   BEGIN
     dummy := test_table_obj.gen_insert_random_rows_stmt(3);
   END;
-END;
 
+  PROCEDURE test_diff_cols IS
+    l_table1 VARCHAR2(767);
+    l_table2 VARCHAR2(767);
+    l_diff_type VARCHAR2(1);
+    l_result CLOB;
+    qry VARCHAR(32767);
+    is_diff INT;
+  BEGIN
+    is_diff := test_table_obj.diff(
+                        other_table => test_for_diff_table_obj,
+                        use_diff_results_table => true,
+                        compare_columns => true,
+                        compare_constraints => false,
+                        compare_indexes => false,
+                        compare_data => false);
+
+    qry := 'SELECT table1, table2, diff_type, result ' ||
+    'FROM (' ||
+    '  SELECT table1, table2, diff_type, result' ||
+    '  FROM diff_results' ||
+    '  ORDER BY id DESC' ||--should be ok if we're the only one using the table
+    ') sub ' ||
+    'WHERE rownum = 1';
+
+    EXECUTE IMMEDIATE qry INTO l_table1, l_table2, l_diff_type, l_result;
+
+    ut3.ut.expect(l_table1).to_equal(test_table_obj.qual_table_name);
+    ut3.ut.expect(l_table2).to_equal(test_for_diff_table_obj.qual_table_name);
+    ut3.ut.expect(l_diff_type).to_equal('C');
+    --have to look at the code to determine this order! maybe eventually it should be a row per diff
+    ut3.ut.expect(instr(l_result, 'MWRYNN.MW_TEST.B has data_length=10 but MWRYNN.MW_TEST2.B has data_length=20')).not_to_equal(0);
+    ut3.ut.expect(instr(l_result, 'MWRYNN.MW_TEST.C has data_type=DATE but MWRYNN.MW_TEST2.C has data_type=NUMBER')).not_to_equal(0);
+    ut3.ut.expect(instr(l_result, 'MWRYNN.MW_TEST.C has data_length=7 but MWRYNN.MW_TEST2.C has data_length=22')).not_to_equal(0);
+    ut3.ut.expect(instr(l_result, 'column MWRYNN.MW_TEST2.E not found in MWRYNN.MW_TEST')).not_to_equal(0);
+  END;
+
+  PROCEDURE test_diff_cols_same IS
+    is_diff INT;
+  BEGIN
+    is_diff := test_table_obj.diff(
+                      other_table => test_duplicate_table_obj,
+                      use_diff_results_table => true,
+                      compare_columns => true,
+                      compare_constraints => false,
+                      compare_indexes => false,
+                      compare_data => false);
+    ut3.ut.expect(is_diff).to_equal(0);
+  END;
+
+  PROCEDURE test_drop_table IS
+  BEGIN
+    test_table_obj.drop_table;
+
+    ut3.ut.expect(test_table_obj.table_exists).to_equal(false);
+  END;
+END;

@@ -43,13 +43,15 @@ can these be done in a static manner? yes static methods exist if not the type
     /* disables all non-unique indexes on the table (uniques are needed to enforce unique/primary keys, TODO: handle PK/Unique optionally) */
     MEMBER FUNCTION disable_indexes RETURN INT,
     
-    /* given other_table (name of another table in the same schema), returns string of join columns between the two tables. Joins on primary key columns having the same name only. self_alias and other_alias are optional aliases for this table and other_table, respectively
+    /*
+       given other_table (name of another table in the same schema), returns string of join columns between the two tables. Joins on primary key columns having the same name only. self_alias and other_alias are optional aliases for this table and other_table, respectively
        HEADS-UP: this depends on MATCHING column names, e.g. both department and employee tables would have to have employee_id to join the two, so the convention of employee having just plain "id" is not supported
        perhaps a TODO: support other matching methods, perhaps by looking at foreign keys
     */
     MEMBER FUNCTION join_list(other_table IN table_obj, self_alias IN VARCHAR2 DEFAULT 'a', other_alias IN VARCHAR2 DEFAULT 'b') RETURN VARCHAR2,
     
-    /* given this table and other_table, return string representing setting each column in self table to each column in other_table, matched by names, PK cols excluded
+    /*
+       given this table and other_table, return string representing setting each column in self table to each column in other_table, matched by names, PK cols excluded
        aliases must be specified, or else self is assumed to be 'a' and other_table's alias 'b'
        This is useful for generating merge or update statements, setting a.mycol=b.mycol etc.
     */
@@ -64,7 +66,10 @@ can these be done in a static manner? yes static methods exist if not the type
     /* adds a column to self table */
     MEMBER FUNCTION add_col(name IN VARCHAR2, type IN VARCHAR2, constraint IN VARCHAR2 DEFAULT NULL, ignore_if_exists IN BOOLEAN DEFAULT true) RETURN INT,
     
-    /* generates "CREATE TABLE" DDL stsatement given column names, types, constraints and keys passed in. extra_stuff is appended, which is useful for special features */
+    /*
+       generates "CREATE TABLE" DDL stsatement given column names, types, constraints and keys passed in. extra_stuff is appended, which is useful for special features
+       note this is probably better for creating new tables. For existing tables you can call DBMS_METADATA.GET_DDL which is very complete
+    */
     MEMBER FUNCTION gen_create_ddl(cols_name_arr IN cols_arr, cols_type_arr IN varchar2_arr, cols_constraints IN varchar2_arr, keys IN varchar2_arr, extra_stuff IN VARCHAR2 DEFAULT NULL) RETURN VARCHAR2,
     
     /* generates an INSERT statement that inserts n rows of random data. min_date and max_date define the range of dates and timestamps allowed. Foreign key cols are generated from selecting a random value from the parent table */
@@ -87,10 +92,13 @@ can these be done in a static manner? yes static methods exist if not the type
     
     /* returns true if table indicated by table_name, schema_name and dblink exists, false otherwise */
     MEMBER FUNCTION table_exists RETURN BOOLEAN,
+    
+    /* drop the table - mostly handy to avoid repeatedly writing manual checks for whether the table exists before issuing DROP TABLE */
+    MEMBER PROCEDURE drop_table(ignore_if_not_exists IN BOOLEAN DEFAULT true),
 
     /* diffs two tables either at a schema level or data level, as determined by the various parameters. use_diff_results_table indicates
-       whether the detailed results should be put in a table. Whether this is used or not, the function returns true if the tables differ
-       according to the specified parameters, false if not
+       whether the detailed results should be put in a table. Whether this is used or not, the function returns 1 if the tables differ
+       according to the specified parameters, 0 if not
     */
     MEMBER FUNCTION diff(other_table IN TABLE_OBJ, 
                          use_diff_results_table IN BOOLEAN DEFAULT true,
