@@ -558,7 +558,7 @@ CREATE OR REPLACE TYPE BODY table_obj AS /* should consider replacing user_* vie
       IF diff_columns(other_table, use_diff_results_table, diff_results_table) = 1 THEN is_diff := true; END IF;
     END IF; 
 
-    -- handle compare_constraints
+    -- TODO: handle compare_constraints
 
     -- handle compare_indexes
     IF compare_indexes THEN
@@ -715,8 +715,9 @@ CREATE OR REPLACE TYPE BODY table_obj AS /* should consider replacing user_* vie
 
     IF length(diff_str) > 0 THEN
       IF use_diff_results_table THEN
+        --TODO: bind!!
         EXECUTE IMMEDIATE 'INSERT INTO ' || diff_results_table.qual_table_name || '(table1, table2, diff_type, result) ' ||
-          'VALUES(' || self.qual_table_name || ', ' || other_table.qual_table_name || ', ''C'', ' || diff_str ||  ')';
+          'VALUES(''' || self.qual_table_name || ''', ''' || other_table.qual_table_name || ''', ''C'', ''' || diff_str ||  ''')';
       ELSE
         dbms_output.put_line(diff_str);
       END IF;
@@ -795,6 +796,7 @@ CREATE OR REPLACE TYPE BODY table_obj AS /* should consider replacing user_* vie
                    'RESULT CLOB,' || 
                    'CONSTRAINT chk_diff_type CHECK (DIFF_TYPE IN (''C'', ''O'', ''I'', ''D''))' || --Columns, cOnstraints, Indexes, Data
                    ')'; 
+    dbms_output.put_line(create_stmt);
     EXECUTE IMMEDIATE create_stmt;
     RETURN true;
   END create_diff_results_table;

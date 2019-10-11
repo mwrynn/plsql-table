@@ -93,12 +93,12 @@ can these be done in a static manner? yes static methods exist if not the type
     /* returns true if table indicated by table_name, schema_name and dblink exists, false otherwise */
     MEMBER FUNCTION table_exists RETURN BOOLEAN,
     
-    /* drop the table - mostly handy to avoid repeatedly writing manual checks for whether the table exists */
+    /* drop the table - mostly handy to avoid repeatedly writing manual checks for whether the table exists before issuing DROP TABLE */
     MEMBER PROCEDURE drop_table(ignore_if_not_exists IN BOOLEAN DEFAULT true),
 
     /* diffs two tables either at a schema level or data level, as determined by the various parameters. use_diff_results_table indicates
-       whether the detailed results should be put in a table. Whether this is used or not, the function returns true if the tables differ
-       according to the specified parameters, false if not
+       whether the detailed results should be put in a table. Whether this is used or not, the function returns 1 if the tables differ
+       according to the specified parameters, 0 if not
     */
     MEMBER FUNCTION diff(other_table IN TABLE_OBJ, 
                          use_diff_results_table IN BOOLEAN DEFAULT true,

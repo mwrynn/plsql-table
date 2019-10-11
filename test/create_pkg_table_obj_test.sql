@@ -39,8 +39,13 @@ CREATE OR REPLACE PACKAGE pkg_table_obj_test AS
   --%throws(-20005)
   PROCEDURE test_gen_insert_random_rows_stmt_date_fail;
 
+  --%test(test that diff gives valid diffs in two tables with a few column differences)
+  PROCEDURE test_diff_cols;
+
+  --%test(test that no column diffs found in two tables with identical columns)
+  PROCEDURE test_diff_cols_same;
+
   --%test(test that existing table is successfully dropped)
   PROCEDURE test_drop_table;
-
 END;
 
