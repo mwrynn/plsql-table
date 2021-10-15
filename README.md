@@ -9,8 +9,4 @@ https://mwrynn.blogspot.com/2018/02/the-mwrynn-plsql-table-api-diff-util.html
 
 
 # How to create:
-First run the script: create_table_obj_helpers.sql
-
-Next, run the script: create_table_obj.sql
-
-Finally, run script:  create_table_obj_body.sql
+To create the object type TABLE_OBJ and its dependencies, you only need to run the script create_all.sql from a client such as sqlplus, sqlcl or SQL Developer. This script will in turn run the scripts create_table_obj_helpers.sql, create_table_obj.sql and create_table_obj_body.sql in that order.
