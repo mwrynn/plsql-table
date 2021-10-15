@@ -1,4 +1,4 @@
-DROP TYPE table_obj FORCE;
+EXEC drop_type_if_not_exists(type_name => 'table_obj', force => true);
 /
 CREATE TYPE table_obj AS OBJECT (
     table_name VARCHAR2(255),
