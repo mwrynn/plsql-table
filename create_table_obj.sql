@@ -9,6 +9,12 @@ CREATE TYPE table_obj AS OBJECT (
 util for enable/disable indexes, random rows etc. How best to group? could use more object types? So something like my_table_obj.gen.arr.all_cols? 
 can these be done in a static manner? yes static methods exist if not the type
 */
+    CONSTRUCTOR FUNCTION table_obj(
+      table_name VARCHAR2,
+      schema_name VARCHAR2,
+      dblink VARCHAR2 DEFAULT NULL,
+      existence_check BOOLEAN DEFAULT false
+    ) RETURN SELF AS RESULT,
 
     MEMBER FUNCTION qual_table_name RETURN VARCHAR2, --returns fully qualified table name, including "@dblink" if applicable 
     

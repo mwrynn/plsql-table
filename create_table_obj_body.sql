@@ -1,4 +1,43 @@
-CREATE OR REPLACE TYPE BODY table_obj AS /* should consider replacing user_* views with all_* so that this will work with other schemas */
+CREATE OR REPLACE TYPE BODY table_obj AS
+  CONSTRUCTOR FUNCTION table_obj(
+    table_name VARCHAR2,
+    schema_name VARCHAR2,
+    dblink VARCHAR2 DEFAULT NULL,
+    existence_check BOOLEAN DEFAULT false
+  ) RETURN SELF AS RESULT
+  AS
+    l_cnt INT;
+    l_qry VARCHAR2(500);
+  BEGIN
+    SELF.table_name := table_name;
+    SELF.schema_name := schema_name;
+    SELF.dblink := dblink;
+    
+    IF existence_check = false THEN
+      RETURN;
+    END IF;
+    
+    IF dblink IS NULL THEN
+      SELECT COUNT(*) INTO l_cnt
+      FROM all_tables
+      WHERE owner=schema_name AND table_name=SELF.table_name;
+    ELSE
+      l_qry := 'SELECT COUNT(*)' || chr(10) ||
+      'FROM all_tables@:1' || chr(10) ||
+      'WHERE owner=:2 AND table_name=:3';
+      
+      EXECUTE IMMEDIATE l_qry INTO l_cnt USING SELF.dblink, SELF.schema_name, SELF.table_name;
+    END IF;
+    
+    IF l_cnt = 0 THEN
+      raise_application_error( -20006, 'table must exist in order to create table_obj instance');
+    END IF;
+    
+    RETURN;
+  END;
+
+  ---
+      
   MEMBER FUNCTION qual_table_name RETURN VARCHAR2 IS
   BEGIN
     IF dblink IS NOT NULL THEN
@@ -162,7 +201,7 @@ CREATE OR REPLACE TYPE BODY table_obj AS /* should consider replacing user_* vie
   BEGIN
     FOR rec IN (SELECT * FROM all_indexes WHERE owner=self.upper_schema_name() AND table_name=self.upper_table_name() AND uniqueness='NONUNIQUE') LOOP
       IF rec.index_type IN ('NORMAL', 'NORMAL/REV', 'FUNCTION-BASED DOMAIN', 'FUNCTION-BASED NORMAL') THEN
-        rebuild_str := 'ALTER INDEX ' || rec.index_name || ' REBUILD';
+        rebuild_str := 'ALTER INDEX ' || self.upper_schema_name() || '.' || rec.index_name || ' REBUILD';
       END IF;
       EXECUTE IMMEDIATE rebuild_str;
       index_count := index_count + 1;
@@ -313,7 +352,7 @@ CREATE OR REPLACE TYPE BODY table_obj AS /* should consider replacing user_* vie
     data_type VARCHAR2(32767);
     rand_val VARCHAR2(32767);
 
-    TYPE col_metadata_arr_type IS TABLE OF user_tab_cols%ROWTYPE INDEX BY PLS_INTEGER;
+    TYPE col_metadata_arr_type IS TABLE OF all_tab_cols%ROWTYPE INDEX BY PLS_INTEGER;
 
     col_metadata_arr col_metadata_arr_type;
   BEGIN
@@ -326,8 +365,9 @@ CREATE OR REPLACE TYPE BODY table_obj AS /* should consider replacing user_* vie
     /* collect the column metadata to loop over */
     SELECT *
     BULK COLLECT INTO col_metadata_arr
-    FROM user_tab_cols
-    WHERE table_name=self.table_name
+    FROM all_tab_cols
+    WHERE table_name=self.upper_table_name()
+      AND owner=self.upper_schema_name()
     ORDER by column_id;
     
     /* loop n times, where n is number of rows to generate */
@@ -390,8 +430,10 @@ CREATE OR REPLACE TYPE BODY table_obj AS /* should consider replacing user_* vie
   BEGIN
     FOR rec IN (SELECT 1 FROM DUAL WHERE EXISTS (
       SELECT 1
-      FROM user_cons_columns col, user_constraints cons
+      FROM all_cons_columns col, all_constraints cons
       WHERE (cons.table_name=col.table_name AND cons.constraint_name=col.constraint_name)
+      AND col.owner=self.upper_schema_name()
+      AND cons.owner=self.upper_schema_name()
       AND cons.table_name=self.upper_table_name()
       AND column_name=col_name
       AND constraint_type='R'
@@ -413,13 +455,18 @@ CREATE OR REPLACE TYPE BODY table_obj AS /* should consider replacing user_* vie
   BEGIN
     --get referenced column
     SELECT pk_col.column_name, pk_col.table_name, tab_col.data_type INTO refd_col, refd_table, data_type
-      FROM user_constraints cons, user_cons_columns col, user_constraints pk_cons, user_cons_columns pk_col, all_tab_columns tab_col
+      FROM all_constraints cons, all_cons_columns col, all_constraints pk_cons, all_cons_columns pk_col, all_tab_columns tab_col
       WHERE
           (cons.owner=col.owner AND cons.table_name=col.table_name AND cons.constraint_name=col.constraint_name)
       AND (cons.r_constraint_name=pk_cons.constraint_name AND cons.r_owner=pk_cons.owner)
       AND (pk_cons.owner=pk_col.owner AND pk_cons.table_name=pk_col.table_name AND pk_cons.constraint_name=pk_col.constraint_name)
       AND (pk_col.owner=tab_col.owner AND pk_col.table_name=tab_col.table_name AND pk_col.column_name=tab_col.column_name)
       AND cons.table_name=self.upper_table_name()
+      AND cons.owner=self.upper_schema_name()
+      AND col.owner=self.upper_schema_name()
+      AND pk_cons.owner=self.upper_schema_name()
+      AND pk_col.owner=self.upper_schema_name()
+      AND tab_col.owner=self.upper_schema_name()
       AND col.column_name=fk_col_name
       AND cons.constraint_type='R';
 

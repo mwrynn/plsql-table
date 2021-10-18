@@ -1,9 +1,11 @@
+
+/* unit tests; requires utPLSQL */
 CREATE OR REPLACE PACKAGE pkg_table_obj_test AS
   --%suite(tests for the table_obj functions)
   --%rollback(manual)
   
   --%beforeall
-  PROCEDURE setup(schema IN VARCHAR2 DEFAULT 'MWRYNN');
+  PROCEDURE setup(schema IN VARCHAR2 DEFAULT 'ADMIN'); --may need to change this to your schema
   
   --%test(test that the function qual_table_name, without a dblink, returns the expected string)
   PROCEDURE test_qual_table_name_nodblink;
@@ -47,5 +49,8 @@ CREATE OR REPLACE PACKAGE pkg_table_obj_test AS
 
   --%test(test that existing table is successfully dropped)
   PROCEDURE test_drop_table;
+  
+  --%test(test that creating table_obj with existence_check false and table does not exist throws exception)
+  PROCEDURE test_table_obj_with_existence_check_fails;
 END;
 

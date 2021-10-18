@@ -1,18 +1,18 @@
 CREATE OR REPLACE PACKAGE BODY pkg_table_obj_test AS
-  test_table_obj table_obj;
-  test_parent_table_obj table_obj;
-  test_for_diff_table_obj table_obj;
-  test_duplicate_table_obj table_obj;
+  test_table_obj admin.table_obj;
+  test_parent_table_obj admin.table_obj;
+  test_for_diff_table_obj admin.table_obj;
+  test_duplicate_table_obj admin.table_obj;
+  test_schema VARCHAR2(32767);
   
-  PROCEDURE setup(schema IN VARCHAR2 DEFAULT 'MWRYNN') AS
-    test_schema VARCHAR2(32767);
+  PROCEDURE setup(schema IN VARCHAR2 DEFAULT 'ADMIN') AS
   BEGIN
     test_schema := UPPER(schema);
     
     --tried defaulting to sys_context( 'userenv', 'current_schema' ), but that returns null in this context
 
-    test_table_obj := table_obj('MW_TEST', UPPER(test_schema), NULL);
-    test_parent_table_obj := table_obj('MW_TEST_PARENT', UPPER(test_schema), NULL);
+    test_table_obj := table_obj(table_name => 'MW_TEST', schema_name => UPPER(test_schema), dblink => NULL, existence_check => false);
+    test_parent_table_obj := table_obj(table_name => 'MW_TEST_PARENT', schema_name => UPPER(test_schema), dblink => NULL, existence_check => false);
         
     test_table_obj.drop_table;
     test_parent_table_obj.drop_table;
@@ -36,15 +36,15 @@ CREATE OR REPLACE PACKAGE BODY pkg_table_obj_test AS
     EXECUTE IMMEDIATE 'INSERT INTO ' || test_schema || '.mw_test(a,b,c,d) VALUES (3, ''def'', to_date(''20190325'',''YYYYMMDD''), 0)';
 
     --for diffing
-    test_for_diff_table_obj := table_obj('MW_TEST2', UPPER(test_schema), NULL);
+    test_for_diff_table_obj := table_obj(table_name => 'MW_TEST2', schema_name => UPPER(test_schema), dblink => NULL, existence_check => false);
     test_for_diff_table_obj.drop_table;
 
     EXECUTE IMMEDIATE 'CREATE TABLE ' || test_schema || '.mw_test2(a INT, b VARCHAR2(20), c NUMBER(10), d NUMBER(15,2), e DATE, PRIMARY KEY(a,d))';
 
-    test_duplicate_table_obj := table_obj('MW_TEST3', UPPER(test_schema), NULL);
+    test_duplicate_table_obj := table_obj(table_name => 'MW_TEST3', schema_name => UPPER(test_schema), dblink => NULL, existence_check => false);
     test_duplicate_table_obj.drop_table;
 
-    EXECUTE IMMEDIATE 'CREATE TABLE ' || test_schema || '.mw_test3 AS SELECT * FROM mw_test';
+    EXECUTE IMMEDIATE 'CREATE TABLE ' || test_schema || '.mw_test3 AS SELECT * FROM ' || test_schema ||  '.mw_test';
 
   END;
   
@@ -133,7 +133,7 @@ CREATE OR REPLACE PACKAGE BODY pkg_table_obj_test AS
     values_regex LONG;
   BEGIN
     random_rows_stmt := test_table_obj.gen_insert_random_rows_stmt(3, to_date('20190101', 'YYYYMMDD'), to_date('20190131', 'YYYYMMDD'));
-
+    
     --random data should be as follows (a sample):
 
     --INSERT INTO MWRYNN.MW_TEST(A,B,C,D)
@@ -143,7 +143,7 @@ CREATE OR REPLACE PACKAGE BODY pkg_table_obj_test AS
     -- UNION ALL
     --SELECT 5347208714,'def',to_date('20190204 00:00:00', 'yyyymmdd hh24:mi:ss'),8607663790748.64 FROM dual
 
-    values_regex := 'SELECT [0-9]+,''(abc|def)'',to_date\(''[0-9]{8} [0-9]{2}:[0-9]{2}:[0-9]{2}'', ''yyyymmdd hh24:mi:ss''\),[0-9]+[\.]{0,1}[0-9]{0,2} FROM dual';
+    values_regex := 'SELECT [0-9]+,''[A-Za-z]+'',to_date\(''[0-9]{8} [0-9]{2}:[0-9]{2}:[0-9]{2}'', ''yyyymmdd hh24:mi:ss''\),[0-9]+[\.]{0,1}[0-9]{0,2} FROM dual';
 
     insert_regex := 'INSERT INTO ' || test_table_obj.qual_table_name || '\(A,B,C,D\)' || chr(10) ||
       values_regex || chr(10) ||
@@ -191,10 +191,10 @@ CREATE OR REPLACE PACKAGE BODY pkg_table_obj_test AS
     ut3.ut.expect(l_table2).to_equal(test_for_diff_table_obj.qual_table_name);
     ut3.ut.expect(l_diff_type).to_equal('C');
     --have to look at the code to determine this order! maybe eventually it should be a row per diff
-    ut3.ut.expect(instr(l_result, 'MWRYNN.MW_TEST.B has data_length=10 but MWRYNN.MW_TEST2.B has data_length=20')).not_to_equal(0);
-    ut3.ut.expect(instr(l_result, 'MWRYNN.MW_TEST.C has data_type=DATE but MWRYNN.MW_TEST2.C has data_type=NUMBER')).not_to_equal(0);
-    ut3.ut.expect(instr(l_result, 'MWRYNN.MW_TEST.C has data_length=7 but MWRYNN.MW_TEST2.C has data_length=22')).not_to_equal(0);
-    ut3.ut.expect(instr(l_result, 'column MWRYNN.MW_TEST2.E not found in MWRYNN.MW_TEST')).not_to_equal(0);
+    ut3.ut.expect(instr(l_result, upper(test_schema) || '.MW_TEST.B has data_length=10 but ' || upper(test_schema) || '.MW_TEST2.B has data_length=20')).not_to_equal(0);
+    ut3.ut.expect(instr(l_result, upper(test_schema) || '.MW_TEST.C has data_type=DATE but ' || upper(test_schema) || '.MW_TEST2.C has data_type=NUMBER')).not_to_equal(0);
+    ut3.ut.expect(instr(l_result, upper(test_schema) || '.MW_TEST.C has data_length=7 but ' || upper(test_schema) || '.MW_TEST2.C has data_length=22')).not_to_equal(0);
+    ut3.ut.expect(instr(l_result, 'column ' || upper(test_schema) || '.MW_TEST2.E not found in ' || upper(test_schema) || '.MW_TEST')).not_to_equal(0);
   END;
 
   PROCEDURE test_diff_cols_same IS
@@ -215,5 +215,11 @@ CREATE OR REPLACE PACKAGE BODY pkg_table_obj_test AS
     test_table_obj.drop_table;
 
     ut3.ut.expect(test_table_obj.table_exists).to_equal(false);
+  END;
+  
+  PROCEDURE test_table_obj_with_existence_check_fails IS
+    nonexisting_table_obj table_obj;
+  BEGIN
+    nonexisting_table_obj := table_obj('nonexisting_table', 'nonexisting_schema');
   END;
 END;
