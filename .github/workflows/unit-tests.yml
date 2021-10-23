@@ -24,10 +24,10 @@ jobs:
     steps:
       # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
       - uses: actions/checkout@v2
-      - uses: actions/checkout@master
+      - name: checkout oracle/docker-images in order to get Oracle XE 18.4 docker image
+        uses: actions/checkout@master
         with:
-          name: oracle/docker-images
-          ref: refs/heads/release
+          repository: oracle/docker-images
 
       # Runs a single command using the runners shell
       #- name: Run a one-line script
@@ -36,7 +36,7 @@ jobs:
       # Runs a set of commands using the runners shell
       - name: Run a multi-line script
         run: |
-          oracle/docker-images/OracleDatabase/SingleInstance/buildContainerImage.sh
+          OracleDatabase/SingleInstance/dockerfiles/buildContainerImage.sh
           #
           #docker run --name oracle-18-4-xe \
           #-p 1521:1521 -p 5500:5500 \
