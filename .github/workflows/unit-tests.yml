@@ -24,10 +24,10 @@ jobs:
     steps:
       # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
       - uses: actions/checkout@v2
-      - uses: actions/checkout@master
+      - name: checkout oracle/docker-images in order to get Oracle XE 18.4 docker image
+        uses: actions/checkout@master
         with:
-          name: oracle/docker-images
-          ref: refs/heads/release
+          repository: oracle/docker-images
 
       # Runs a single command using the runners shell
       #- name: Run a one-line script
@@ -36,11 +36,10 @@ jobs:
       # Runs a set of commands using the runners shell
       - name: Run a multi-line script
         run: |
-          oracle/docker-images/OracleDatabase/SingleInstance/buildContainerImage.sh
-          #
-          #docker run --name oracle-18-4-xe \
-          #-p 1521:1521 -p 5500:5500 \
-          #-e ORACLE_PWD=a_dumb_pw_567 \
-          #-e ORACLE_CHARACTERSET=AL32UTF8 \
-          #oracle/database:18.4.0-xe 
+          OracleDatabase/SingleInstance/dockerfiles/buildContainerImage.sh -v 18.4.0 -x && \
+          docker run --name oracle-18-4-xe \
+          -p 1521:1521 -p 5500:5500 \
+          -e ORACLE_PWD=a_dumb_pw_567 \
+          -e ORACLE_CHARACTERSET=AL32UTF8 \
+          oracle/database:18.4.0-xe \
           #see for reference: https://github.com/oracle/docker-images/blob/main/OracleDatabase/SingleInstance/README.md
