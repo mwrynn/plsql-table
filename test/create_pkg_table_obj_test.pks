@@ -53,4 +53,5 @@ CREATE OR REPLACE PACKAGE pkg_table_obj_test AS
   --%test(test that creating table_obj with existence_check false and table does not exist throws exception)
   PROCEDURE test_table_obj_with_existence_check_fails;
 END;
+/
 

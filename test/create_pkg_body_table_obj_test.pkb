@@ -223,3 +223,4 @@ CREATE OR REPLACE PACKAGE BODY pkg_table_obj_test AS
     nonexisting_table_obj := table_obj('nonexisting_table', 'nonexisting_schema');
   END;
 END;
+/
