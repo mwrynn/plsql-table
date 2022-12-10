@@ -596,7 +596,7 @@ CREATE OR REPLACE TYPE BODY table_obj AS
 
     -- handle diff_results creaton - if table exists, don't create, else create
     -- TODO: handle dblink case
-    diff_results_table := table_obj('DIFF_RESULTS', self.schema_name, null);
+    diff_results_table := table_obj('DIFF_RESULTS', self.schema_name);
     IF NOT diff_results_table.table_exists THEN
       dummy := create_diff_results_table(diff_results_table);
     END IF;

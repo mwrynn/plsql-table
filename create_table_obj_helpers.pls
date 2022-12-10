@@ -1,4 +1,4 @@
-CREATE OR REPLACE PROCEDURE drop_type_if_not_exists(type_name IN VARCHAR2, force IN BOOLEAN DEFAULT false) IS
+CREATE OR REPLACE PROCEDURE drop_type_if_exists(type_name IN VARCHAR2, force IN BOOLEAN DEFAULT false) IS
   exec_str VARCHAR2(255);
 BEGIN
   exec_str := 'DROP TYPE ' || type_name;
@@ -6,7 +6,10 @@ BEGIN
     exec_str := exec_str || ' FORCE';
   END IF;
 
+  dbms_output.put_line(exec_str);
   EXECUTE IMMEDIATE exec_str;
+  dbms_output.put_line('success');
+
   EXCEPTION
     WHEN OTHERS THEN
       IF SQLCODE != -4043 THEN --code for does not exist
@@ -15,14 +18,12 @@ BEGIN
 END;
 /
 
-EXEC drop_type_if_not_exists(type_name => 'cols_arr', force => true);
-/
+EXEC drop_type_if_exists(type_name => 'cols_arr', force => true);
 
 CREATE TYPE cols_arr IS TABLE OF VARCHAR2(255);
 /
 
-EXEC drop_type_if_not_exists(type_name => 'col_type', force => true);
-/
+EXEC drop_type_if_exists(type_name => 'col_type', force => true);
 
 CREATE OR REPLACE TYPE col_type AS OBJECT ( --these fields come from *_tab_cols
   column_name VARCHAR2(128),
@@ -64,12 +65,12 @@ CREATE OR REPLACE TYPE BODY col_type AS
    END;
 /
 
-EXEC drop_type_if_not_exists(type_name => 'varchar2_arr', force => true);
-/
+EXEC drop_type_if_exists(type_name => 'varchar2_arr', force => true);
+
 CREATE TYPE varchar2_arr IS TABLE OF VARCHAR2(32767);
 /
 
-EXEC drop_type_if_not_exists(type_name => 'col_types_arr', force => true);
-/
+EXEC drop_type_if_exists(type_name => 'col_types_arr', force => true);
+
 CREATE TYPE col_types_arr IS TABLE OF COL_TYPE;
 /
