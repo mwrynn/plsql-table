@@ -17,7 +17,7 @@ To create the object type TABLE_OBJ and its dependencies, you only need to run t
 3. Run the unit tests: test/run_all_unit_tests.sql
 
 # Tips on installing utPLSQL on Amazon RDS:
-    This can be tricky to get right, as you can't log into RDS as SYSDBA. But the following script should create user `ut3` and set it up with the correct privileges granted:
+    This can be tricky to get right, as you can't log into RDS as SYSDBA. But the following script should create user `ut3` and set it up with the correct privileges granted: (note: versions used: utPLSQL v3.1.12, Oracle 19c
 
 ```
 create role UT_REPO_ADMINISTRATOR;
